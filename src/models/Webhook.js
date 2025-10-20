@@ -45,6 +45,16 @@ const Webhook = sequelize.define('Webhook', {
     type: DataTypes.STRING(50),
     defaultValue: 'pending'
   },
+  current_stage: {
+    type: DataTypes.STRING(100),
+    field: 'current_stage',
+    comment: 'Stage actual en procesamiento'
+  },
+  last_completed_stage: {
+    type: DataTypes.STRING(100),
+    field: 'last_completed_stage',
+    comment: 'Último stage completado con éxito'
+  },
   raw_data: {
     type: DataTypes.JSONB,
     field: 'raw_data'
@@ -66,7 +76,9 @@ const Webhook = sequelize.define('Webhook', {
     { fields: ['ref_payco'] },
     { fields: ['status'] },
     { fields: ['created_at'] },
-    { fields: ['customer_email'] }
+    { fields: ['customer_email'] },
+    { fields: ['current_stage'] },
+    { fields: ['last_completed_stage'] }
   ]
 });
 

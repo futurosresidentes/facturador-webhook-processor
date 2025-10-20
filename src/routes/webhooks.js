@@ -18,9 +18,24 @@ router.post('/', validateWebhook, webhookController.receiveWebhook);
 router.get('/stats', authenticate, webhookController.getWebhookStats);
 
 /**
+ * GET /api/webhooks/incomplete
+ * Lista webhooks que NO están 100% completados
+ * Requiere: Authorization: Bearer <token>
+ */
+router.get('/incomplete', authenticate, webhookController.getIncompleteWebhooks);
+
+/**
+ * GET /api/webhooks/stage/:stage
+ * Lista webhooks atascados en un stage específico
+ * Ejemplo: /api/webhooks/stage/worldoffice_dian
+ * Requiere: Authorization: Bearer <token>
+ */
+router.get('/stage/:stage', authenticate, webhookController.getWebhooksByStage);
+
+/**
  * GET /api/webhooks
  * Lista webhooks con filtros
- * Query params: ?status=pending&limit=50&offset=0
+ * Query params: ?status=pending&current_stage=worldoffice_dian&incomplete=true&limit=50&offset=0
  * Requiere: Authorization: Bearer <token>
  */
 router.get('/', authenticate, webhookController.listWebhooks);

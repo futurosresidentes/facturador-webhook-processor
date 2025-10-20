@@ -156,6 +156,9 @@ async function listWebhooks(req, res) {
   try {
     const {
       status,
+      current_stage,
+      last_completed_stage,
+      incomplete,
       limit = 50,
       offset = 0,
       order = 'created_at',
@@ -163,8 +166,28 @@ async function listWebhooks(req, res) {
     } = req.query;
 
     const where = {};
+
+    // Filtro por status
     if (status) {
       where.status = status;
+    }
+
+    // Filtro por stage actual
+    if (current_stage) {
+      where.current_stage = current_stage;
+    }
+
+    // Filtro por último stage completado
+    if (last_completed_stage) {
+      where.last_completed_stage = last_completed_stage;
+    }
+
+    // Filtro de incompletos (cualquier status que NO sea 'completed')
+    if (incomplete === 'true') {
+      const { Op } = require('sequelize');
+      where.status = {
+        [Op.ne]: 'completed'
+      };
     }
 
     const webhooks = await Webhook.findAndCountAll({
@@ -234,10 +257,10 @@ async function getWebhookLogs(req, res) {
  */
 async function getWebhookStats(_req, res) {
   try {
-    const { Sequelize } = require('sequelize');
+    const { Sequelize, Op } = require('sequelize');
 
     // Contar webhooks por estado
-    const stats = await Webhook.findAll({
+    const statsByStatus = await Webhook.findAll({
       attributes: [
         'status',
         [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
@@ -245,24 +268,149 @@ async function getWebhookStats(_req, res) {
       group: ['status']
     });
 
+    // Contar webhooks por stage actual (solo incompletos)
+    const statsByStage = await Webhook.findAll({
+      attributes: [
+        'current_stage',
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
+      ],
+      where: {
+        status: { [Op.ne]: 'completed' },
+        current_stage: { [Op.ne]: null }
+      },
+      group: ['current_stage']
+    });
+
     // Obtener últimos webhooks
     const recent = await Webhook.findAll({
       limit: 10,
       order: [['created_at', 'DESC']],
-      attributes: ['id', 'ref_payco', 'status', 'invoice_id', 'created_at']
+      attributes: ['id', 'ref_payco', 'status', 'invoice_id', 'current_stage', 'last_completed_stage', 'created_at']
+    });
+
+    // Contar webhooks incompletos
+    const incompleteCount = await Webhook.count({
+      where: {
+        status: { [Op.ne]: 'completed' }
+      }
     });
 
     res.json({
       success: true,
-      stats: stats.reduce((acc, item) => {
-        acc[item.status] = parseInt(item.dataValues.count);
-        return acc;
-      }, {}),
+      stats: {
+        byStatus: statsByStatus.reduce((acc, item) => {
+          acc[item.status] = parseInt(item.dataValues.count);
+          return acc;
+        }, {}),
+        byStage: statsByStage.reduce((acc, item) => {
+          acc[item.current_stage] = parseInt(item.dataValues.count);
+          return acc;
+        }, {}),
+        incomplete: incompleteCount
+      },
       recent
     });
 
   } catch (error) {
     logger.error('[Controller] Error obteniendo estadísticas:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Obtiene webhooks incompletos (no completados al 100%)
+ */
+async function getIncompleteWebhooks(req, res) {
+  try {
+    const { Op } = require('sequelize');
+    const {
+      limit = 50,
+      offset = 0,
+      order = 'created_at',
+      dir = 'DESC'
+    } = req.query;
+
+    const webhooks = await Webhook.findAndCountAll({
+      where: {
+        status: {
+          [Op.ne]: 'completed'
+        }
+      },
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [[order, dir]],
+      attributes: [
+        'id',
+        'ref_payco',
+        'invoice_id',
+        'customer_email',
+        'status',
+        'current_stage',
+        'last_completed_stage',
+        'created_at',
+        'updated_at'
+      ]
+    });
+
+    res.json({
+      success: true,
+      message: 'Webhooks que no están 100% completados',
+      total: webhooks.count,
+      webhooks: webhooks.rows
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error obteniendo webhooks incompletos:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Obtiene webhooks atascados en un stage específico
+ */
+async function getWebhooksByStage(req, res) {
+  try {
+    const { stage } = req.params;
+    const {
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    const webhooks = await Webhook.findAndCountAll({
+      where: {
+        current_stage: stage
+      },
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['created_at', 'DESC']],
+      attributes: [
+        'id',
+        'ref_payco',
+        'invoice_id',
+        'customer_email',
+        'status',
+        'current_stage',
+        'last_completed_stage',
+        'created_at',
+        'updated_at'
+      ]
+    });
+
+    res.json({
+      success: true,
+      stage,
+      total: webhooks.count,
+      webhooks: webhooks.rows
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error obteniendo webhooks por stage:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -276,5 +424,7 @@ module.exports = {
   getWebhook,
   listWebhooks,
   getWebhookLogs,
-  getWebhookStats
+  getWebhookStats,
+  getIncompleteWebhooks,
+  getWebhooksByStage
 };

@@ -75,6 +75,26 @@ module.exports = {
     bearerToken: process.env.API_BEARER_TOKEN
   },
 
+  // World Office (Facturador)
+  worldOffice: {
+    apiUrl: process.env.WORLDOFFICE_API_URL,
+    apiToken: process.env.WORLDOFFICE_API_TOKEN,
+    username: process.env.WORLDOFFICE_USERNAME,
+    password: process.env.WORLDOFFICE_PASSWORD
+  },
+
+  // Strapi Facturación
+  strapi: {
+    apiUrl: process.env.STRAPI_API_URL,
+    apiToken: process.env.STRAPI_API_TOKEN
+  },
+
+  // Callbell (WhatsApp notifications)
+  callbell: {
+    apiUrl: process.env.CALLBELL_API_URL,
+    apiKey: process.env.CALLBELL_API_KEY
+  },
+
   // Logging
   logging: {
     level: process.env.LOG_LEVEL || 'info',

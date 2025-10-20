@@ -10,7 +10,9 @@
       "Bash(find . -type f ( -name \"*.md\" -o -name \"*migrate*\" ) -not -path \"*/node_modules/*\" -not -path \"*/.git/*\")",
       "Bash(node -c \"c:\\Sitios\\Facturador_render\\src\\services\\webhookProcessor.js\")",
       "Bash(node -e \"console.log(require(''crypto'').randomBytes(32).toString(''hex''))\")",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Agregar autenticación Bearer Token y sistema de logs mejorado\n\n- Implementar middleware de autenticación Bearer Token\n- Proteger todos los endpoints de consulta (GET /api/webhooks/*)\n- Agregar endpoint /api/webhooks/stats para estadísticas\n- Agregar endpoint /api/webhooks/:id/logs para logs detallados\n- Crear documentación completa de seguridad (SEGURIDAD.md)\n- Actualizar documentación de API (API_ENDPOINTS.md)\n- Mejorar comentarios en webhookProcessor.js\n- Configurar variable API_BEARER_TOKEN en env\n\nEndpoints protegidos:\n- GET /api/webhooks (lista webhooks)\n- GET /api/webhooks/stats (estadísticas)\n- GET /api/webhooks/:id (detalles)\n- GET /api/webhooks/:id/logs (logs paso a paso)\n- POST /api/webhooks/:id/reprocess (reprocesar)\n\nEndpoints públicos:\n- POST /api/webhooks (recibir webhooks de ePayco)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push)"
     ],
     "deny": [],
     "ask": []
