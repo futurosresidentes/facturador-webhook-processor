@@ -418,6 +418,88 @@ async function getWebhooksByStage(req, res) {
   }
 }
 
+/**
+ * Actualiza manualmente el estado de un webhook
+ */
+async function updateWebhookStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const {
+      status,
+      current_stage,
+      last_completed_stage
+    } = req.body;
+
+    const webhook = await Webhook.findByPk(id);
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    // Validar status si se proporciona
+    const validStatuses = ['pending', 'processing', 'completed', 'error', 'not_processed'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Status inválido. Debe ser uno de: ${validStatuses.join(', ')}`
+      });
+    }
+
+    // Construir objeto de actualización
+    const updates = {
+      updated_at: new Date()
+    };
+
+    if (status !== undefined) {
+      updates.status = status;
+    }
+
+    if (current_stage !== undefined) {
+      updates.current_stage = current_stage;
+    }
+
+    if (last_completed_stage !== undefined) {
+      updates.last_completed_stage = last_completed_stage;
+    }
+
+    // Actualizar webhook
+    await webhook.update(updates);
+
+    // Registrar en logs
+    await WebhookLog.create({
+      webhook_id: id,
+      stage: 'manual_update',
+      status: 'success',
+      details: `Actualización manual: ${JSON.stringify(updates)}`
+    });
+
+    logger.info(`[Controller] Webhook ${id} actualizado manualmente:`, updates);
+
+    res.json({
+      success: true,
+      message: 'Webhook actualizado correctamente',
+      webhook: {
+        id: webhook.id,
+        ref_payco: webhook.ref_payco,
+        status: webhook.status,
+        current_stage: webhook.current_stage,
+        last_completed_stage: webhook.last_completed_stage,
+        updated_at: webhook.updated_at
+      }
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error actualizando webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
 module.exports = {
   receiveWebhook,
   reprocessWebhook,
@@ -426,5 +508,6 @@ module.exports = {
   getWebhookLogs,
   getWebhookStats,
   getIncompleteWebhooks,
-  getWebhooksByStage
+  getWebhooksByStage,
+  updateWebhookStatus
 };

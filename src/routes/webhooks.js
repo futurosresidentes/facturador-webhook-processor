@@ -61,4 +61,12 @@ router.get('/:id', authenticate, webhookController.getWebhook);
  */
 router.post('/:id/reprocess', authenticate, webhookController.reprocessWebhook);
 
+/**
+ * PATCH /api/webhooks/:id/status
+ * Actualiza manualmente el estado de un webhook
+ * Body: { status, current_stage, last_completed_stage }
+ * Requiere: Authorization: Bearer <token>
+ */
+router.patch('/:id/status', authenticate, webhookController.updateWebhookStatus);
+
 module.exports = router;
