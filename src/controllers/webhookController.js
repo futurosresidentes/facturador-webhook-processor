@@ -1,4 +1,4 @@
-const { Webhook } = require('../models');
+const { Webhook, WebhookLog } = require('../models');
 const webhookProcessor = require('../services/webhookProcessor');
 const logger = require('../config/logger');
 
