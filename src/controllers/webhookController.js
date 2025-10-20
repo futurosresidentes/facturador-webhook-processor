@@ -11,6 +11,14 @@ async function receiveWebhook(req, res) {
 
     logger.info(`[Controller] Recibiendo webhook: ${webhookData.x_ref_payco}`);
 
+    // Normalizar ciudad y dirección ("N/A" -> null)
+    const normalizeValue = (value) => {
+      if (!value || value === 'N/A' || value.trim() === '') {
+        return null;
+      }
+      return value.trim();
+    };
+
     // 1. Guardar webhook en BD
     const webhook = await Webhook.create({
       ref_payco: webhookData.x_ref_payco,
@@ -18,6 +26,8 @@ async function receiveWebhook(req, res) {
       invoice_id: webhookData.x_id_invoice,
       customer_email: webhookData.x_customer_email,
       customer_name: `${webhookData.x_customer_name || ''} ${webhookData.x_customer_lastname || ''}`.trim(),
+      customer_city: normalizeValue(webhookData.x_customer_city),
+      customer_address: normalizeValue(webhookData.x_customer_address),
       product: webhookData.x_description,
       amount: webhookData.x_amount,
       currency: webhookData.x_currency_code,
@@ -30,6 +40,26 @@ async function receiveWebhook(req, res) {
 
     // 2. Procesar solo si la respuesta es "Aceptada"
     if (webhookData.x_response === 'Aceptada') {
+      // Verificar que no esté ya en procesamiento
+      const existingProcessing = await Webhook.findOne({
+        where: {
+          ref_payco: webhook.ref_payco,
+          status: 'processing'
+        }
+      });
+
+      if (existingProcessing && existingProcessing.id !== webhook.id) {
+        logger.warn(`[Controller] Webhook ${webhook.ref_payco} ya está siendo procesado (ID: ${existingProcessing.id})`);
+        await webhook.update({ status: 'duplicate' });
+        return res.status(200).json({
+          success: true,
+          message: 'Webhook duplicado - ya está en procesamiento',
+          ref: webhook.ref_payco,
+          id: webhook.id,
+          original_id: existingProcessing.id
+        });
+      }
+
       // Procesar en background (no esperar respuesta)
       webhookProcessor.processWebhook(webhook.id)
         .catch(err => {

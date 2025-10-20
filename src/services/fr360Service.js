@@ -32,7 +32,21 @@ async function getPaymentLink(invoiceId) {
 
         if (result.status === 'success' && result.data && result.data.length > 0) {
           logger.info(`[FR360] Consulta exitosa en intento ${attempt}`);
-          return result.data[0];
+          const paymentLink = result.data[0];
+
+          // Mapear campos con nombres alternativos para mejor legibilidad
+          return {
+            ...paymentLink,
+            // Aliases para usar en el código
+            comercial: paymentLink.salesRep,
+            cedula: paymentLink.identityDocument,
+            nombres: paymentLink.givenName,
+            apellidos: paymentLink.familyName,
+            correo: paymentLink.email,
+            telefono: paymentLink.phone,
+            nroAcuerdo: paymentLink.agreementId,
+            fechaInicio: paymentLink.accessDate
+          };
         } else {
           throw new Error(`Respuesta exitosa pero sin datos: ${JSON.stringify(result)}`);
         }

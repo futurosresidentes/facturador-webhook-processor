@@ -29,6 +29,14 @@ const Webhook = sequelize.define('Webhook', {
     type: DataTypes.STRING(255),
     field: 'customer_name'
   },
+  customer_city: {
+    type: DataTypes.STRING(255),
+    field: 'customer_city'
+  },
+  customer_address: {
+    type: DataTypes.TEXT,
+    field: 'customer_address'
+  },
   product: {
     type: DataTypes.STRING(255)
   },
