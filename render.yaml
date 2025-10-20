@@ -1,0 +1,71 @@
+# Render Blueprint para deployment automatizado
+# Documentación: https://render.com/docs/blueprint-spec
+
+services:
+  # PostgreSQL Database
+  - type: pserv
+    name: facturador-db
+    region: oregon
+    plan: free
+    databaseName: facturador
+    databaseUser: facturador_user
+
+  # Web Service (Node.js API)
+  - type: web
+    name: facturador-webhook-processor
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: facturador-db
+          property: connectionString
+
+      - key: FR360_API_URL
+        value: https://fr360-7cwi.onrender.com/api/v1
+
+      - key: FR360_BEARER_TOKEN
+        sync: false  # Configurar manualmente en Render Dashboard
+
+      - key: AC_BASE_URL
+        value: https://sentiretaller.api-us1.com/api/3
+
+      - key: AC_API_TOKEN
+        sync: false
+
+      - key: FRAPP_API_URL
+        value: https://admin-appfr-os0a.onrender.com/api/v2/auth/register
+
+      - key: FRAPP_API_KEY
+        sync: false
+
+      - key: FRAPP_CRM_ACCOUNT
+        value: sentiretaller
+
+      - key: FRAPP_CRM_API_TOKEN
+        sync: false
+
+      - key: FRAPP_MODO_PRODUCCION
+        value: false
+
+      - key: GCHAT_SUCCESS_WEBHOOK
+        sync: false
+
+      - key: GCHAT_ERROR_WEBHOOK
+        sync: false
+
+      - key: GCHAT_CRM_ERROR_WEBHOOK
+        sync: false
+
+      - key: GCHAT_FRAPP_WEBHOOK
+        sync: false
+
+      - key: JWT_SECRET
+        generateValue: true
