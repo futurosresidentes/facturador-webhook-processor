@@ -70,6 +70,11 @@ module.exports = {
     secret: process.env.JWT_SECRET || 'change_this_secret_in_production'
   },
 
+  // API Security
+  api: {
+    bearerToken: process.env.API_BEARER_TOKEN
+  },
+
   // Logging
   logging: {
     level: process.env.LOG_LEVEL || 'info',

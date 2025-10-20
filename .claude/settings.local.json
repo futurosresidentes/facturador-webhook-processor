@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node test-webhook.js:*)",
+      "Bash(test:*)",
+      "Bash(npm start)",
+      "Bash(psql:*)",
+      "Bash(pg_isready:*)",
+      "Bash(export TEST_URL=\"https://facturador-webhook-processor.onrender.com\")",
+      "Bash(find . -type f ( -name \"*.md\" -o -name \"*migrate*\" ) -not -path \"*/node_modules/*\" -not -path \"*/.git/*\")",
+      "Bash(node -c \"c:\\Sitios\\Facturador_render\\src\\services\\webhookProcessor.js\")",
+      "Bash(node -e \"console.log(require(''crypto'').randomBytes(32).toString(''hex''))\")",
+      "Bash(git add -A)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

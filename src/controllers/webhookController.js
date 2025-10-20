@@ -189,9 +189,92 @@ async function listWebhooks(req, res) {
   }
 }
 
+/**
+ * Obtiene los logs detallados de un webhook
+ */
+async function getWebhookLogs(req, res) {
+  try {
+    const { id } = req.params;
+
+    const webhook = await Webhook.findByPk(id, {
+      include: [
+        {
+          association: 'logs',
+          order: [['created_at', 'ASC']]
+        }
+      ]
+    });
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      webhook_id: webhook.id,
+      ref_payco: webhook.ref_payco,
+      status: webhook.status,
+      logs: webhook.logs
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error obteniendo logs de webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Obtiene estadísticas de webhooks
+ */
+async function getWebhookStats(_req, res) {
+  try {
+    const { Sequelize } = require('sequelize');
+
+    // Contar webhooks por estado
+    const stats = await Webhook.findAll({
+      attributes: [
+        'status',
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
+      ],
+      group: ['status']
+    });
+
+    // Obtener últimos webhooks
+    const recent = await Webhook.findAll({
+      limit: 10,
+      order: [['created_at', 'DESC']],
+      attributes: ['id', 'ref_payco', 'status', 'invoice_id', 'created_at']
+    });
+
+    res.json({
+      success: true,
+      stats: stats.reduce((acc, item) => {
+        acc[item.status] = parseInt(item.dataValues.count);
+        return acc;
+      }, {}),
+      recent
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error obteniendo estadísticas:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
 module.exports = {
   receiveWebhook,
   reprocessWebhook,
   getWebhook,
-  listWebhooks
+  listWebhooks,
+  getWebhookLogs,
+  getWebhookStats
 };

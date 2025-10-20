@@ -1,3 +1,12 @@
+/**
+ * Procesador de webhooks de ePayco
+ * Maneja el flujo completo de procesamiento de pagos:
+ * 1. Consulta datos del payment link en FR360
+ * 2. Crea/actualiza contacto en CRM
+ * 3. Crea membresías si el producto lo requiere
+ * 4. Envía notificaciones de éxito/error
+ */
+
 const { Webhook, WebhookLog } = require('../models');
 const fr360Service = require('./fr360Service');
 const crmService = require('./crmService');
@@ -7,14 +16,16 @@ const { requiresMemberships } = require('../utils/productFilter');
 const logger = require('../config/logger');
 
 /**
- * Procesa un webhook completo
+ * Procesa un webhook de pago de ePayco
  * @param {number} webhookId - ID del webhook en la base de datos
+ * @returns {Promise<Object>} Resultado del procesamiento con datos del contacto y URL de activación
+ * @throws {Error} Si ocurre algún error durante el procesamiento
  */
 async function processWebhook(webhookId) {
   let webhook;
 
   try {
-    // 1. Obtener webhook de BD
+    // Buscar el webhook en la base de datos
     webhook = await Webhook.findByPk(webhookId);
 
     if (!webhook) {
@@ -23,7 +34,7 @@ async function processWebhook(webhookId) {
 
     logger.info(`[Processor] Procesando webhook ${webhook.ref_payco}`);
 
-    // Crear log inicial
+    // Registrar inicio del procesamiento
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'started',
@@ -31,15 +42,14 @@ async function processWebhook(webhookId) {
       details: 'Iniciando procesamiento del webhook'
     });
 
-    // Actualizar estado del webhook
+    // Actualizar estado del webhook a "procesando"
     await webhook.update({ status: 'processing', updated_at: new Date() });
 
-    // 2. Extraer invoiceId
+    // Extraer el invoice ID (antes del guión)
     const invoiceId = webhook.invoice_id.split('-')[0];
-
     logger.info(`[Processor] Invoice ID extraído: ${invoiceId}`);
 
-    // Log: Consultando FR360
+    // Registrar consulta a FR360
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'fr360_query',
@@ -47,14 +57,14 @@ async function processWebhook(webhookId) {
       details: `Consultando invoice ${invoiceId} en FR360 API`
     });
 
-    // 3. Consultar FR360
+    // Obtener datos del payment link desde FR360
     const paymentLinkData = await fr360Service.getPaymentLink(invoiceId);
 
     logger.info(`[Processor] Payment link obtenido para invoice ${invoiceId}`);
     logger.info(`[Processor] Producto: ${paymentLinkData.product}`);
     logger.info(`[Processor] Email: ${paymentLinkData.email}`);
 
-    // Log: Buscando en CRM
+    // Registrar búsqueda/creación de contacto en CRM
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'crm_upsert',
@@ -62,18 +72,16 @@ async function processWebhook(webhookId) {
       details: `Buscando o creando contacto en CRM: ${paymentLinkData.email}`
     });
 
-    // 4. Buscar o crear en CRM
+    // Buscar o crear contacto en ActiveCampaign
     const contact = await crmService.findOrCreateContact(paymentLinkData);
-
     logger.info(`[Processor] Contacto procesado con CRM ID: ${contact.crm_id}`);
 
-    // 5. Verificar si debe crear membresías
+    // Verificar si el producto requiere creación de membresías
     const debeCrearMemberships = requiresMemberships(paymentLinkData.product);
-
     let activationUrl = null;
 
     if (debeCrearMemberships) {
-      // Log: Creando membresías
+      // Registrar creación de membresías
       await WebhookLog.create({
         webhook_id: webhookId,
         stage: 'membership_creation',
@@ -81,7 +89,7 @@ async function processWebhook(webhookId) {
         details: `Creando membresías para producto: ${paymentLinkData.product}`
       });
 
-      // Crear membresías
+      // Crear membresías en FR360
       activationUrl = await membershipService.createMemberships({
         contactId: contact.id,
         identityDocument: paymentLinkData.identityDocument,
@@ -95,16 +103,16 @@ async function processWebhook(webhookId) {
       });
 
       logger.info(`[Processor] Membresías procesadas. Activation URL: ${activationUrl || 'N/A'}`);
-
     } else {
       logger.info(`[Processor] Producto no requiere membresías: ${paymentLinkData.product}`);
     }
 
-    // 6. Actualizar estado final
+    // Preparar mensaje final según resultado
     const finalDetails = debeCrearMemberships && activationUrl
       ? `Completado exitosamente. Producto: ${paymentLinkData.product} | Membresías creadas | URL: ${activationUrl}`
       : `Completado. Producto: ${paymentLinkData.product} | NO requiere membresías (Cuota 2+, producto no permitido, etc.)`;
 
+    // Registrar finalización exitosa
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'completed',
@@ -112,12 +120,13 @@ async function processWebhook(webhookId) {
       details: finalDetails
     });
 
+    // Actualizar webhook como completado
     await webhook.update({
       status: 'completed',
       updated_at: new Date()
     });
 
-    // 7. Notificar éxito
+    // Enviar notificación de éxito
     await notificationService.notifySuccess({
       invoiceId,
       email: paymentLinkData.email,
@@ -129,6 +138,7 @@ async function processWebhook(webhookId) {
 
     logger.info(`[Processor] Webhook ${webhook.ref_payco} procesado exitosamente`);
 
+    // Retornar resultado del procesamiento
     return {
       success: true,
       webhookId,
@@ -140,7 +150,7 @@ async function processWebhook(webhookId) {
   } catch (error) {
     logger.error(`[Processor] Error procesando webhook ${webhookId}:`, error);
 
-    // Registrar error en log
+    // Registrar error en el log
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'error',
@@ -149,7 +159,7 @@ async function processWebhook(webhookId) {
       error_message: error.toString()
     });
 
-    // Actualizar estado del webhook
+    // Actualizar webhook con estado de error
     if (webhook) {
       await webhook.update({
         status: 'error',
@@ -157,7 +167,7 @@ async function processWebhook(webhookId) {
       });
     }
 
-    // Notificar error
+    // Enviar notificación de error
     await notificationService.notifyError({
       webhookRef: webhook?.ref_payco,
       invoiceId: webhook?.invoice_id,
