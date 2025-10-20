@@ -48,11 +48,13 @@ const Webhook = sequelize.define('Webhook', {
   current_stage: {
     type: DataTypes.STRING(100),
     field: 'current_stage',
+    allowNull: true,
     comment: 'Stage actual en procesamiento'
   },
   last_completed_stage: {
     type: DataTypes.STRING(100),
     field: 'last_completed_stage',
+    allowNull: true,
     comment: 'Último stage completado con éxito'
   },
   raw_data: {

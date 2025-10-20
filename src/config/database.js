@@ -37,8 +37,13 @@ const testConnection = async () => {
 // Sync database (create tables if not exist)
 const syncDatabase = async (force = false) => {
   try {
-    await sequelize.sync({ force });
-    logger.info(`Database synchronized ${force ? '(forced)' : ''}`);
+    // En producción, usar alter para agregar columnas sin borrar datos
+    const syncOptions = config.nodeEnv === 'production'
+      ? { alter: true }
+      : { force };
+
+    await sequelize.sync(syncOptions);
+    logger.info(`Database synchronized ${force ? '(forced)' : syncOptions.alter ? '(alter mode)' : ''}`);
   } catch (error) {
     logger.error('Error synchronizing database:', error);
     throw error;
