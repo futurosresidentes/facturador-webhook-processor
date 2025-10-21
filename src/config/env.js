@@ -80,7 +80,9 @@ module.exports = {
     apiUrl: process.env.WORLDOFFICE_API_URL,
     apiToken: process.env.WORLDOFFICE_API_TOKEN,
     username: process.env.WORLDOFFICE_USERNAME,
-    password: process.env.WORLDOFFICE_PASSWORD
+    password: process.env.WORLDOFFICE_PASSWORD,
+    modoProduccion: process.env.WORLDOFFICE_MODO_PRODUCCION === 'true',
+    emitirDian: process.env.WORLDOFFICE_EMITIR_DIAN === 'true'
   },
 
   // Strapi Facturación

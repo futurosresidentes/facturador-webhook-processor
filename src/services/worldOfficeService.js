@@ -32,6 +32,70 @@ const strapiClient = axios.create({
   }
 });
 
+// ==================== CONSTANTES DE FACTURACIÓN ====================
+
+// ISBNs de los 24 libros FR
+const ISBNS = [
+  "978-628-95885-0-7",
+  "978-628-95885-2-1",
+  "978-628-95885-3-8",
+  "978-628-95885-1-4",
+  "978-628-95885-4-5",
+  "978-628-95885-6-9",
+  "978-628-95885-7-6",
+  "978-628-95885-5-2",
+  "978-628-96023-3-3",
+  "978-628-96023-0-2",
+  "978-628-96023-1-9",
+  "978-628-96023-2-6",
+  "978-628-96023-4-0",
+  "978-628-96023-5-7",
+  "978-628-96023-7-1",
+  "978-628-96023-6-4",
+  "978-628-96166-1-3",
+  "978-628-96023-9-5",
+  "978-628-96023-8-8",
+  "978-628-96166-0-6",
+  "978-628-96166-5-1",
+  "978-628-96166-2-0",
+  "978-628-96166-3-7",
+  "978-628-96166-4-4"
+];
+
+// Precio por libro
+const PRECIO_POR_LIBRO = 200000;
+
+// Tope exento de IVA (24 libros)
+const TOPE_EXENTO_IVA = 4800000;
+
+// ID de inventario para MIR (cuando excede tope)
+const ID_INVENTARIO_MIR = 1001;
+
+// Mapeo de productos a IDs de inventario en World Office
+const PRODUCT_INVENTORY_MAP = {
+  'iaura': { id: 1004, hasIVA: true, centroCosto: 1 },
+  'sculapp': { id: 1008, hasIVA: true, centroCosto: 2 },
+  'asesoria': { id: 1003, hasIVA: true, centroCosto: 1 },
+  'publicidad': { id: 1062, hasIVA: true, centroCosto: 2 },
+  'simulacion': { id: 1054, hasIVA: true, centroCosto: 1 },
+  'acceso vip': { id: 1057, hasIVA: true, centroCosto: 1 },
+  'ingles': { id: 1059, hasIVA: true, centroCosto: 1 },
+  'vip - rmastery': { id: 1067, hasIVA: true, centroCosto: 1 },
+  'default': { id: 1010, hasIVA: false, centroCosto: 1 } // FR Libros
+};
+
+// ==================== HELPER FUNCTIONS ====================
+
+/**
+ * Helper: Quitar acentos de un string
+ * @param {string} str - String con acentos
+ * @returns {string} String sin acentos
+ */
+function quitarAcentos(str) {
+  if (!str) return '';
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 /**
  * Helper: Separar nombres en primer y segundo nombre
  * @param {string} fullName - Nombre completo
@@ -45,6 +109,64 @@ function splitNames(fullName) {
     primerNombre: parts[0] || '',
     segundoNombre: parts.slice(1).join(' ') || ''
   };
+}
+
+/**
+ * Helper: Obtener ISBNs según el producto y valor
+ * @param {string} producto - Nombre del producto
+ * @param {number} valor - Valor de la factura
+ * @returns {string} ISBNs formateados
+ */
+function getISBNs(producto, valor) {
+  const cantidadLibros = Math.ceil(valor / PRECIO_POR_LIBRO);
+
+  // Normalizar producto
+  const productoNorm = quitarAcentos(producto.toLowerCase())
+    .replace(/cuota/gi, 'parte')
+    .replace(/\s*\(mora\)/g, '')
+    .replace(/extraordinaria/gi, 'autorizada');
+
+  // Extraer número de parte/cuota
+  const parteMatch = productoNorm.match(/parte (\d+)/);
+
+  if (parteMatch) {
+    // Es una cuota específica (Parte 1, 2, 3...)
+    const parteNumero = parseInt(parteMatch[1], 10);
+    const primerLibro = (parteNumero - 1) * cantidadLibros;
+    const isbnsSeleccionados = ISBNS.slice(primerLibro, primerLibro + cantidadLibros);
+    return "ISBNS: " + isbnsSeleccionados.join(", ");
+
+  } else if (productoNorm.includes("autorizada")) {
+    // Cuota extraordinaria/autorizada → últimos libros
+    const isbnsSeleccionados = ISBNS.slice(-cantidadLibros);
+    return "ISBNS: " + isbnsSeleccionados.join(", ");
+
+  } else {
+    // Pago completo → todos los ISBNs
+    return "ISBNS: " + ISBNS.join(", ");
+  }
+}
+
+/**
+ * Helper: Determinar ID de inventario según el producto
+ * @param {string} producto - Nombre del producto
+ * @returns {Object} { id, hasIVA, centroCosto, productoNorm }
+ */
+function getInventoryId(producto) {
+  const productoNorm = quitarAcentos(producto.toLowerCase())
+    .replace(/cuota/gi, 'parte')
+    .replace(/\s*\(mora\)/g, '')
+    .replace(/extraordinaria/gi, 'autorizada');
+
+  // Buscar coincidencia en el mapeo
+  for (const [key, config] of Object.entries(PRODUCT_INVENTORY_MAP)) {
+    if (key !== 'default' && productoNorm.includes(key)) {
+      return { ...config, productoNorm };
+    }
+  }
+
+  // Si no coincide con ninguno, retornar default (FR Libros)
+  return { ...PRODUCT_INVENTORY_MAP.default, productoNorm };
 }
 
 /**
@@ -236,98 +358,286 @@ async function findOrUpdateCustomer(customerData) {
 }
 
 /**
- * PASO 7: Crear factura de venta en World Office
+ * PASO 6A: Crear factura de venta en World Office
  * @param {Object} invoiceData - Datos de la factura
- * @param {string} invoiceData.customerId - ID del cliente
- * @param {Array} invoiceData.items - Productos/servicios
- * @param {number} invoiceData.total - Total de la factura
- * @returns {Promise<Object>} invoiceNumber e invoiceId
+ * @param {number} invoiceData.customerId - ID del cliente en WO
+ * @param {number} invoiceData.comercialWOId - ID del comercial en WO
+ * @param {string} invoiceData.product - Nombre del producto
+ * @param {number} invoiceData.amount - Monto total
+ * @returns {Promise<Object>} { documentoId, numeroFactura, payload, renglones }
  */
 async function createInvoice(invoiceData) {
   try {
-    logger.info(`[WorldOffice] Creando factura para cliente: ${invoiceData.customerId}`);
+    const { customerId, comercialWOId, product, amount } = invoiceData;
 
-    // TODO: Implementar creación de factura
-    // const response = await woClient.post('/invoices', {
-    //   customerId: invoiceData.customerId,
-    //   items: invoiceData.items,
-    //   total: invoiceData.total,
-    //   date: new Date().toISOString()
-    // });
+    const modoActual = config.worldOffice.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+    logger.info(`[WorldOffice] Creando factura - Modo: ${modoActual}`);
+    logger.info(`[WorldOffice] Cliente: ${customerId}, Comercial: ${comercialWOId}, Producto: ${product}, Monto: $${amount}`);
 
-    // MOCK - Remover cuando implementes la API real
-    logger.warn('[WorldOffice] MODO MOCK - Factura simulada');
-    return {
-      invoiceId: 'INV_MOCK_' + Date.now(),
-      invoiceNumber: 'FV-' + String(Date.now()).slice(-6),
-      customerId: invoiceData.customerId,
-      total: invoiceData.total,
-      status: 'created'
+    // MODO TESTING: Simular
+    if (!config.worldOffice.modoProduccion) {
+      logger.info('[WorldOffice] 🟡 MODO TESTING - Factura simulada');
+
+      const inventoryConfig = getInventoryId(product);
+      const renglones = [];
+
+      if (amount <= TOPE_EXENTO_IVA) {
+        const valorUnitario = inventoryConfig.hasIVA ? amount / 1.19 : amount;
+        renglones.push({
+          idInventario: inventoryConfig.id,
+          cantidad: 1,
+          valorUnitario,
+          valorTotal: valorUnitario,
+          iva: inventoryConfig.hasIVA ? valorUnitario * 0.19 : 0
+        });
+      } else {
+        renglones.push({
+          idInventario: 1010,
+          cantidad: 1,
+          valorUnitario: TOPE_EXENTO_IVA,
+          valorTotal: TOPE_EXENTO_IVA,
+          iva: 0
+        });
+        renglones.push({
+          idInventario: ID_INVENTARIO_MIR,
+          cantidad: 1,
+          valorUnitario: (amount - TOPE_EXENTO_IVA) / 1.19,
+          valorTotal: (amount - TOPE_EXENTO_IVA) / 1.19,
+          iva: ((amount - TOPE_EXENTO_IVA) / 1.19) * 0.19
+        });
+      }
+
+      return {
+        documentoId: 'DOC_SIMULATED_' + Date.now(),
+        numeroFactura: 'FV-SIM-' + Date.now(),
+        monto: amount,
+        renglones,
+        simulado: true
+      };
+    }
+
+    // MODO PRODUCCIÓN: Crear factura real
+    logger.info('[WorldOffice] 🟢 MODO PRODUCCIÓN - Creando factura real');
+
+    const inventoryConfig = getInventoryId(product);
+    const fecha = new Date().toISOString().split('T')[0];
+
+    const payload = {
+      fecha,
+      prefijo: 16,
+      concepto: inventoryConfig.productoNorm,
+      documentoTipo: "FV",
+      idEmpresa: 1,
+      idTerceroExterno: customerId,
+      idTerceroInterno: comercialWOId,
+      idFormaPago: 1001,
+      idMoneda: 31,
+      trm: 1,
+      porcentajeDescuento: false,
+      porcentajeTodosRenglones: false,
+      valDescuento: 0,
+      reglones: []
     };
 
+    // Construir renglones según el monto
+    if (amount <= TOPE_EXENTO_IVA) {
+      // 1 solo producto
+      const valorUnitario = inventoryConfig.hasIVA ? amount / 1.19 : amount;
+      const conceptoRenglon = inventoryConfig.id === 1010 ? getISBNs(product, amount) : "";
+
+      payload.reglones.push({
+        idInventario: inventoryConfig.id,
+        unidadMedida: "und",
+        cantidad: 1,
+        valorUnitario,
+        valorTotal: valorUnitario,
+        idBodega: 1,
+        idCentroCosto: inventoryConfig.centroCosto,
+        concepto: conceptoRenglon,
+        porDescuento: 0,
+        obsequio: false,
+        valorTotalRenglon: 0
+      });
+    } else {
+      // 2 productos (libros + MIR)
+      payload.reglones.push({
+        idInventario: 1010,
+        unidadMedida: "und",
+        cantidad: 1,
+        valorUnitario: TOPE_EXENTO_IVA,
+        valorTotal: TOPE_EXENTO_IVA,
+        idBodega: 1,
+        idCentroCosto: 1,
+        concepto: getISBNs(product, TOPE_EXENTO_IVA),
+        porDescuento: 0,
+        obsequio: false,
+        valorTotalRenglon: 0
+      });
+
+      payload.reglones.push({
+        idInventario: ID_INVENTARIO_MIR,
+        unidadMedida: "und",
+        cantidad: 1,
+        valorUnitario: (amount - TOPE_EXENTO_IVA) / 1.19,
+        valorTotal: (amount - TOPE_EXENTO_IVA) / 1.19,
+        idBodega: 1,
+        idCentroCosto: 1,
+        concepto: "",
+        porDescuento: 0,
+        obsequio: false,
+        valorTotalRenglon: 0
+      });
+    }
+
+    logger.info('[WorldOffice] Payload de factura:', JSON.stringify(payload, null, 2));
+
+    const response = await woClient.post('/api/v1/documentos/crearDocumentoVenta', payload);
+
+    if (response.status === 201 && response.data?.data?.id) {
+      const documentoId = response.data.data.id;
+      logger.info(`[WorldOffice] ✅ Factura creada - Documento ID: ${documentoId}`);
+
+      return {
+        documentoId,
+        numeroFactura: response.data.data.numero || 'FV-' + documentoId,
+        monto: amount,
+        payload,
+        renglones: payload.reglones,
+        simulado: false
+      };
+    }
+
+    throw new Error('No se recibió ID del documento creado');
+
   } catch (error) {
-    logger.error('[WorldOffice] Error en createInvoice:', error);
+    logger.error('[WorldOffice] Error en createInvoice:', error.message);
+    if (error.response) {
+      logger.error('[WorldOffice] Respuesta de error:', JSON.stringify(error.response.data, null, 2));
+    }
     throw new Error(`Error creando factura en World Office: ${error.message}`);
   }
 }
 
 /**
- * PASO 8: Contabilizar factura
- * @param {string} invoiceId - ID de la factura
+ * PASO 6B: Contabilizar factura
+ * @param {string} documentoId - ID del documento
  * @returns {Promise<Object>} accountingStatus
  */
-async function accountInvoice(invoiceId) {
+async function accountInvoice(documentoId) {
   try {
-    logger.info(`[WorldOffice] Contabilizando factura: ${invoiceId}`);
+    const modoActual = config.worldOffice.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+    logger.info(`[WorldOffice] Contabilizando documento ${documentoId} - Modo: ${modoActual}`);
 
-    // TODO: Implementar contabilización
-    // const response = await woClient.post(`/invoices/${invoiceId}/account`, {
-    //   accountDate: new Date().toISOString()
-    // });
+    // MODO TESTING: Simular
+    if (!config.worldOffice.modoProduccion) {
+      logger.info('[WorldOffice] 🟡 MODO TESTING - Contabilización simulada');
+      return {
+        documentoId,
+        status: 'OK',
+        accountingDate: new Date().toISOString(),
+        simulado: true
+      };
+    }
 
-    // MOCK - Remover cuando implementes la API real
-    logger.warn('[WorldOffice] MODO MOCK - Contabilización simulada');
-    return {
-      invoiceId,
-      accountingStatus: 'accounted',
-      accountingDate: new Date().toISOString(),
-      accountingNumber: 'CONT-' + String(Date.now()).slice(-6)
-    };
+    // MODO PRODUCCIÓN: Contabilizar real
+    logger.info('[WorldOffice] 🟢 MODO PRODUCCIÓN - Contabilizando documento');
+
+    const response = await woClient.post(`/api/v1/documentos/contabilizarDocumento/${documentoId}`, {});
+
+    if (response.data?.status === 'OK') {
+      logger.info(`[WorldOffice] ✅ Documento contabilizado - ID: ${documentoId}`);
+      return {
+        documentoId,
+        status: 'OK',
+        accountingDate: new Date().toISOString(),
+        simulado: false
+      };
+    }
+
+    throw new Error('Respuesta de contabilización no esperada');
 
   } catch (error) {
-    logger.error('[WorldOffice] Error en accountInvoice:', error);
-    throw new Error(`Error contabilizando factura en World Office: ${error.message}`);
+    logger.error('[WorldOffice] Error en accountInvoice:', error.message);
+    if (error.response) {
+      logger.error('[WorldOffice] Respuesta de error:', JSON.stringify(error.response.data, null, 2));
+    }
+    throw new Error(`Error contabilizando documento en World Office: ${error.message}`);
   }
 }
 
 /**
- * PASO 9: Emitir factura electrónica ante la DIAN
- * @param {string} invoiceId - ID de la factura
- * @returns {Promise<Object>} cufe, dianStatus, pdfUrl
+ * PASO 6C: Emitir factura electrónica ante la DIAN
+ * @param {string} documentoId - ID del documento
+ * @returns {Promise<Object>} cufe, dianStatus
  */
-async function emitDianInvoice(invoiceId) {
+async function emitDianInvoice(documentoId) {
   try {
-    logger.info(`[WorldOffice] Emitiendo factura electrónica: ${invoiceId}`);
+    // Si la emisión DIAN está desactivada, skip
+    if (!config.worldOffice.emitirDian) {
+      logger.info('[WorldOffice] 🔴 Emisión DIAN desactivada (WORLDOFFICE_EMITIR_DIAN=false)');
+      return {
+        documentoId,
+        dianStatus: 'skipped',
+        message: 'Emisión DIAN desactivada por configuración',
+        skipped: true
+      };
+    }
 
-    // TODO: Implementar emisión ante la DIAN
-    // const response = await woClient.post(`/invoices/${invoiceId}/emit-dian`, {
-    //   emitDate: new Date().toISOString()
-    // });
+    const modoActual = config.worldOffice.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+    logger.info(`[WorldOffice] Emitiendo factura electrónica - Documento: ${documentoId} - Modo: ${modoActual}`);
 
-    // MOCK - Remover cuando implementes la API real
-    logger.warn('[WorldOffice] MODO MOCK - Emisión DIAN simulada');
-    return {
-      invoiceId,
-      cufe: 'CUFE' + Date.now() + 'ABCDEF1234567890',
-      dianStatus: 'accepted',
-      dianResponse: 'Documento aceptado por la DIAN',
-      pdfUrl: `https://facturador.ejemplo.com/invoices/${invoiceId}/pdf`,
-      xmlUrl: `https://facturador.ejemplo.com/invoices/${invoiceId}/xml`,
-      emittedAt: new Date().toISOString()
-    };
+    // MODO TESTING: Simular
+    if (!config.worldOffice.modoProduccion) {
+      logger.info('[WorldOffice] 🟡 MODO TESTING - Emisión DIAN simulada');
+      return {
+        documentoId,
+        cufe: 'CUFE_SIMULATED_' + Date.now(),
+        dianStatus: 'ACCEPTED',
+        emittedAt: new Date().toISOString(),
+        simulado: true
+      };
+    }
+
+    // MODO PRODUCCIÓN: Emitir real
+    logger.info('[WorldOffice] 🟢 MODO PRODUCCIÓN - Emitiendo ante DIAN');
+
+    try {
+      const response = await woClient.post(`/api/v1/documentos/facturaElectronica/${documentoId}`, {});
+
+      if (response.data?.status === 'ACCEPTED') {
+        logger.info(`[WorldOffice] ✅ Factura electrónica emitida - Documento: ${documentoId}`);
+        return {
+          documentoId,
+          cufe: response.data.cufe || 'CUFE-' + documentoId,
+          dianStatus: 'ACCEPTED',
+          emittedAt: new Date().toISOString(),
+          simulado: false
+        };
+      }
+
+      throw new Error('DIAN no aceptó la factura: ' + response.data?.message);
+
+    } catch (error) {
+      // Error 409 = Ya fue emitida → NO es error fatal
+      if (error.response?.status === 409) {
+        logger.warn('[WorldOffice] ⚠️ Factura ya emitida previamente (409) - Continuando...');
+        return {
+          documentoId,
+          dianStatus: 'already_emitted',
+          warning: true,
+          message: 'Factura ya fue emitida anteriormente'
+        };
+      }
+
+      // Otro error → lanzar
+      throw error;
+    }
 
   } catch (error) {
-    logger.error('[WorldOffice] Error en emitDianInvoice:', error);
+    logger.error('[WorldOffice] Error en emitDianInvoice:', error.message);
+    if (error.response) {
+      logger.error('[WorldOffice] Respuesta de error:', JSON.stringify(error.response.data, null, 2));
+    }
     throw new Error(`Error emitiendo factura ante la DIAN: ${error.message}`);
   }
 }
