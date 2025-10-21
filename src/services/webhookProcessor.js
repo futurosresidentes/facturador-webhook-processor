@@ -183,22 +183,6 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ActivationUrl actualizada en CRM`);
     }
 
-    // Si hay etiquetas, agregarlas
-    const etiquetasAplicadas = [];
-    if (membershipResult?.etiquetas && membershipResult.etiquetas.length > 0) {
-      for (const tagId of membershipResult.etiquetas) {
-        try {
-          await crmService.addTagToContact(contact.id, tagId);
-          logger.info(`[Processor] Etiqueta ${tagId} agregada al contacto`);
-          etiquetasAplicadas.push(tagId);
-        } catch (error) {
-          logger.warn(`[Processor] Error agregando etiqueta ${tagId}: ${error.message}`);
-        }
-      }
-    }
-
-    completedStages.crm = true;
-
     // Preparar descripción de etiquetas
     const ETIQUETAS_NOMBRES = {
       1172: 'Nueva Plataforma',
@@ -207,12 +191,41 @@ async function processWebhook(webhookId) {
       1176: 'Élite 12 meses'
     };
 
+    // Aplicar etiquetas solo en modo PRODUCCIÓN
+    const etiquetasAplicadas = [];
     let etiquetasDetalle = 'N/A';
-    if (etiquetasAplicadas.length > 0) {
-      etiquetasDetalle = etiquetasAplicadas
-        .map(tagId => `${tagId} (${ETIQUETAS_NOMBRES[tagId] || 'Desconocida'})`)
-        .join(', ');
+    let etiquetasLabel = 'Etiquetas aplicadas';
+
+    if (membershipResult?.etiquetas && membershipResult.etiquetas.length > 0) {
+      if (config.frapp.modoProduccion) {
+        // MODO PRODUCCIÓN: Aplicar etiquetas realmente
+        for (const tagId of membershipResult.etiquetas) {
+          try {
+            await crmService.addTagToContact(contact.id, tagId);
+            logger.info(`[Processor] Etiqueta ${tagId} agregada al contacto`);
+            etiquetasAplicadas.push(tagId);
+          } catch (error) {
+            logger.warn(`[Processor] Error agregando etiqueta ${tagId}: ${error.message}`);
+          }
+        }
+
+        if (etiquetasAplicadas.length > 0) {
+          etiquetasDetalle = etiquetasAplicadas
+            .map(tagId => `${tagId} (${ETIQUETAS_NOMBRES[tagId] || 'Desconocida'})`)
+            .join(', ');
+        }
+        etiquetasLabel = 'Etiquetas aplicadas';
+      } else {
+        // MODO TESTING: No aplicar, solo notificar cuáles se hubieran aplicado
+        logger.info(`[Processor] 🟡 MODO TESTING: NO se aplican etiquetas, solo se muestran las que se aplicarían`);
+        etiquetasDetalle = membershipResult.etiquetas
+          .map(tagId => `${tagId} (${ETIQUETAS_NOMBRES[tagId] || 'Desconocida'})`)
+          .join(', ');
+        etiquetasLabel = 'Etiquetas que se aplicarían';
+      }
     }
+
+    completedStages.crm = true;
 
     // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
     await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
@@ -223,7 +236,7 @@ async function processWebhook(webhookId) {
       'Teléfono': paymentLinkData.phone,
       'Cédula': paymentLinkData.identityDocument,
       'ActivationUrl': membershipResult?.activationUrl ? '✅ Actualizada' : 'N/A',
-      'Etiquetas aplicadas': etiquetasDetalle,
+      [etiquetasLabel]: etiquetasDetalle,
       'Resultado': '✅ Contacto gestionado exitosamente'
     });
 
