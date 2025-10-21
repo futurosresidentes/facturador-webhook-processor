@@ -23,6 +23,9 @@ const logger = require('../config/logger');
  */
 async function processWebhook(webhookId) {
   let webhook;
+  const startTime = Date.now(); // Capturar tiempo de inicio
+  const completedStages = {}; // Rastrear stages completados
+  let totalRetries = 0; // Contador de reintentos
 
   try {
     // Buscar el webhook en la base de datos
@@ -45,11 +48,12 @@ async function processWebhook(webhookId) {
     // Actualizar estado del webhook a "procesando"
     await webhook.update({ status: 'processing', updated_at: new Date() });
 
-    // Extraer el invoice ID (antes del guión)
+    // STAGE 1: Extraer el invoice ID (antes del guión)
     const invoiceId = webhook.invoice_id.split('-')[0];
     logger.info(`[Processor] Invoice ID extraído: ${invoiceId}`);
+    completedStages.invoice_extraction = true;
 
-    // Registrar consulta a FR360
+    // STAGE 2: Registrar consulta a FR360
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'fr360_query',
@@ -63,8 +67,9 @@ async function processWebhook(webhookId) {
     logger.info(`[Processor] Payment link obtenido para invoice ${invoiceId}`);
     logger.info(`[Processor] Producto: ${paymentLinkData.product}`);
     logger.info(`[Processor] Email: ${paymentLinkData.email}`);
+    completedStages.fr360_query = true;
 
-    // Registrar búsqueda/creación de contacto en CRM
+    // STAGE 3: Registrar búsqueda/creación de contacto en CRM
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'crm_upsert',
@@ -75,10 +80,16 @@ async function processWebhook(webhookId) {
     // Buscar o crear contacto en ActiveCampaign
     const contact = await crmService.findOrCreateContact(paymentLinkData);
     logger.info(`[Processor] Contacto procesado con CRM ID: ${contact.crm_id}`);
+    completedStages.crm = true;
 
-    // Verificar si el producto requiere creación de membresías
+    // El crmService actual no devuelve si fue creado o actualizado
+    // Por ahora asumiremos que siempre es 'updated' hasta migrar a crmService.v2.js
+    const crmAction = 'updated';
+
+    // STAGE 4: Verificar si el producto requiere creación de membresías
     const debeCrearMemberships = requiresMemberships(paymentLinkData.product);
     let activationUrl = null;
+    let memberships = [];
 
     if (debeCrearMemberships) {
       // Registrar creación de membresías
@@ -103,6 +114,12 @@ async function processWebhook(webhookId) {
       });
 
       logger.info(`[Processor] Membresías procesadas. Activation URL: ${activationUrl || 'N/A'}`);
+      completedStages.memberships = true;
+
+      // Construir array de membresías (el servicio actual no devuelve esta info, inferimos del producto)
+      memberships = [
+        { name: paymentLinkData.product, status: 'Activa' }
+      ];
     } else {
       logger.info(`[Processor] Producto no requiere membresías: ${paymentLinkData.product}`);
     }
@@ -126,17 +143,45 @@ async function processWebhook(webhookId) {
       updated_at: new Date()
     });
 
-    // Enviar notificación de éxito
+    // Calcular tiempo total de procesamiento
+    const processingTimeMs = Date.now() - startTime;
+
+    // Enviar notificación de éxito con resumen completo
     await notificationService.notifySuccess({
+      webhookRef: webhook.ref_payco,
       invoiceId,
       email: paymentLinkData.email,
       contactCrmId: contact.crm_id,
       product: paymentLinkData.product,
-      amount: `${webhook.amount} ${webhook.currency}`,
-      activationUrl: activationUrl || 'N/A'
+      amount: webhook.amount,
+      activationUrl: activationUrl,
+
+      // Datos del cliente
+      customerData: {
+        nombres: paymentLinkData.givenName,
+        apellidos: paymentLinkData.familyName,
+        cedula: paymentLinkData.identityDocument,
+        telefono: paymentLinkData.phone,
+        ciudad: webhook.customer_city,
+        direccion: webhook.customer_address,
+        comercial: paymentLinkData.salesRep
+      },
+
+      // Acción realizada en CRM
+      crmAction: crmAction,
+
+      // Stages completados
+      stages: completedStages,
+
+      // Membresías creadas
+      memberships: memberships.length > 0 ? memberships : undefined,
+
+      // Métricas de performance
+      totalRetries: totalRetries,
+      processingTimeMs: processingTimeMs
     });
 
-    logger.info(`[Processor] Webhook ${webhook.ref_payco} procesado exitosamente`);
+    logger.info(`[Processor] Webhook ${webhook.ref_payco} procesado exitosamente en ${(processingTimeMs / 1000).toFixed(2)}s`);
 
     // Retornar resultado del procesamiento
     return {
