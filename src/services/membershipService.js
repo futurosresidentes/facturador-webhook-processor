@@ -238,7 +238,7 @@ async function createMemberships(params) {
 
   logger.info(`[Membership] Etiquetas a aplicar: ${etiquetas.join(', ')}`);
 
-  // 12. Notificar resultado
+  // 12. Notificar resultado usando notifyStep (PASO 3)
   const resumenMensaje = membershipsCreadas.map((m, idx) => {
     let detalle = `${idx + 1}. ${m.nombre} (Plan ID: ${m.planId})\n`;
     detalle += `   • Inicia: ${m.inicio}\n`;
@@ -252,22 +252,21 @@ async function createMemberships(params) {
     return detalle;
   }).join('\n\n');
 
-  const notificationData = {
-    'Cliente': `${givenName} ${familyName}`,
+  const tituloModo = config.frapp.modoProduccion
+    ? '✅ MEMBRESÍAS CREADAS EN PRODUCCIÓN'
+    : '🟡 SIMULACIÓN: MEMBRESÍAS QUE SE CREARÍAN';
+
+  await notificationService.notifyStep(3, 'CREACIÓN DE MEMBRESÍAS (FRAPP)', {
+    'Producto': product,
     'Email': email,
+    'Cliente': `${givenName} ${familyName}`,
     'ID': identityDocument,
     'Teléfono': phone,
-    'Producto comprado': product,
     'Modo': modoActual,
     'Membresías': `\n${resumenMensaje}`,
-    'Activation URL': activationUrl || 'N/A'
-  };
-
-  if (!config.frapp.modoProduccion) {
-    await notificationService.notifyFrapp('🟡 SIMULACIÓN: MEMBRESÍAS QUE SE CREARÍAN', notificationData);
-  } else {
-    await notificationService.notifyFrapp('✅ MEMBRESÍAS CREADAS EN PRODUCCIÓN', notificationData);
-  }
+    'Activation URL': activationUrl || 'N/A',
+    'Resultado': tituloModo
+  });
 
   logger.info(`[Membership] Proceso completado. Activation URL: ${activationUrl || 'N/A'}`);
 

@@ -116,15 +116,8 @@ async function processWebhook(webhookId) {
         details: `Creando membresías para producto: ${paymentLinkData.product}`
       });
 
-      // NOTIFICACIÓN PASO 3: Membresías
-      await notificationService.notifyStep(3, 'CREACIÓN DE MEMBRESÍAS (FRAPP)', {
-        'Producto': paymentLinkData.product,
-        'Email': paymentLinkData.email,
-        'Nombre': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
-        'Estado': '🔄 Procesando...'
-      });
-
       // Crear membresías en FR360 (sin contactId aún)
+      // La notificación se envía DENTRO de membershipService.createMemberships()
       membershipResult = await membershipService.createMemberships({
         contactId: null, // Aún no tenemos contactId de CRM
         identityDocument: paymentLinkData.identityDocument,
@@ -162,12 +155,6 @@ async function processWebhook(webhookId) {
       details: `Buscando o creando contacto en CRM: ${paymentLinkData.email}`
     });
 
-    // NOTIFICACIÓN PASO 4: CRM
-    await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
-      'Email': paymentLinkData.email,
-      'Estado': '🔄 Procesando...'
-    });
-
     // Buscar o crear contacto en ActiveCampaign
     const crmResult = await crmService.createOrUpdateContact(paymentLinkData, webhook);
     const contact = crmResult.contact;
@@ -197,11 +184,13 @@ async function processWebhook(webhookId) {
     }
 
     // Si hay etiquetas, agregarlas
+    const etiquetasAplicadas = [];
     if (membershipResult?.etiquetas && membershipResult.etiquetas.length > 0) {
       for (const tagId of membershipResult.etiquetas) {
         try {
           await crmService.addTagToContact(contact.id, tagId);
           logger.info(`[Processor] Etiqueta ${tagId} agregada al contacto`);
+          etiquetasAplicadas.push(tagId);
         } catch (error) {
           logger.warn(`[Processor] Error agregando etiqueta ${tagId}: ${error.message}`);
         }
@@ -210,7 +199,22 @@ async function processWebhook(webhookId) {
 
     completedStages.crm = true;
 
-    // NOTIFICACIÓN PASO 4 COMPLETADA: CRM
+    // Preparar descripción de etiquetas
+    const ETIQUETAS_NOMBRES = {
+      1172: 'Nueva Plataforma',
+      1174: 'Élite 6 meses',
+      1175: 'Élite 9 meses',
+      1176: 'Élite 12 meses'
+    };
+
+    let etiquetasDetalle = 'N/A';
+    if (etiquetasAplicadas.length > 0) {
+      etiquetasDetalle = etiquetasAplicadas
+        .map(tagId => `${tagId} (${ETIQUETAS_NOMBRES[tagId] || 'Desconocida'})`)
+        .join(', ');
+    }
+
+    // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
     await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
       'Email': paymentLinkData.email,
       'Acción': crmAction === 'created' ? '🆕 Contacto creado' : '🔄 Contacto actualizado',
@@ -219,7 +223,7 @@ async function processWebhook(webhookId) {
       'Teléfono': paymentLinkData.phone,
       'Cédula': paymentLinkData.identityDocument,
       'ActivationUrl': membershipResult?.activationUrl ? '✅ Actualizada' : 'N/A',
-      'Etiquetas aplicadas': membershipResult?.etiquetas ? membershipResult.etiquetas.length : 0,
+      'Etiquetas aplicadas': etiquetasDetalle,
       'Resultado': '✅ Contacto gestionado exitosamente'
     });
 
@@ -319,7 +323,9 @@ async function processWebhook(webhookId) {
       stages: completedStages,
 
       // Membresías creadas
-      memberships: memberships.length > 0 ? memberships : undefined,
+      memberships: membershipResult?.membershipsCreadas && membershipResult.membershipsCreadas.length > 0
+        ? membershipResult.membershipsCreadas
+        : undefined,
 
       // World Office
       worldOfficeCustomerId: woCustomerResult.customerId,
