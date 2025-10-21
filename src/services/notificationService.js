@@ -185,10 +185,62 @@ async function notifyFrapp(title, details) {
   await sendToGoogleChat(config.googleChat.frappWebhook, message);
 }
 
+/**
+ * Notifica paso a paso del procesamiento (para debugging detallado)
+ * @param {number} step - Número del paso (1-10)
+ * @param {string} title - Título del paso
+ * @param {Object} data - Datos a mostrar
+ */
+async function notifyStep(step, title, data = {}) {
+  const emojis = {
+    1: '📝',
+    2: '🔍',
+    3: '👥',
+    4: '🎯',
+    5: '📞',
+    6: '🏢',
+    7: '📄',
+    8: '💼',
+    9: '📧',
+    10: '💾'
+  };
+
+  const emoji = emojis[step] || '▶️';
+
+  const messageParts = [
+    `${emoji} *PASO ${step}: ${title}*`,
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  ];
+
+  // Agregar datos si existen
+  if (Object.keys(data).length > 0) {
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== null && value !== undefined && value !== '') {
+        // Si es un objeto o array, convertir a JSON formateado
+        if (typeof value === 'object') {
+          messageParts.push(`*${key}:*`);
+          messageParts.push('```');
+          messageParts.push(JSON.stringify(value, null, 2));
+          messageParts.push('```');
+        } else {
+          messageParts.push(`• *${key}:* ${value}`);
+        }
+      }
+    }
+  }
+
+  messageParts.push('');
+  messageParts.push(`⏱️ ${new Date().toISOString()}`);
+
+  const message = messageParts.join('\n');
+  await sendToGoogleChat(config.googleChat.successWebhook, message);
+}
+
 module.exports = {
   sendToGoogleChat,
   notifySuccess,
   notifyError,
   notifyCRMError,
-  notifyFrapp
+  notifyFrapp,
+  notifyStep
 };
