@@ -2,30 +2,31 @@
  * Configuración de promociones
  */
 const CONFIGURACION_PROMOCIONES = {
-  promo_octubre_2024: {
+  // Promoción actual: 14-21 Octubre 2025
+  promocion_oct_2025: {
     activa: true,
-    inicio: new Date('2024-10-01T00:00:00Z'),
-    fin: new Date('2024-10-31T23:59:59Z'),
-    descripcion: 'Promoción Octubre 2024: CES y UPB incluidos',
+    inicio: new Date('2025-10-14T00:00:00-05:00'),
+    fin: new Date('2025-10-21T23:59:59-05:00'),
+    descripcion: 'Promoción Octubre 2025: CES y UPB incluidos',
     memberships: {
       'Élite - 6 meses': [
         {
           nombre: 'Élite 6 meses',
-          membershipPlanId: 2,
+          membershipPlanId: 4,
           usarFechaInicio: true,
-          membershipDurationDays: 186
+          membershipDurationDays: 288
         },
         {
           nombre: 'Simulación CES',
           membershipPlanId: 9,
           usarFechaInicio: false,
-          membershipExpiryDate: '2025-11-21T04:59:59Z'
+          membershipExpiryDate: '2025-11-20T23:59:59-05:00'
         },
         {
           nombre: 'Simulación UPB',
           membershipPlanId: 10,
           usarFechaInicio: false,
-          membershipExpiryDate: '2026-04-09T04:59:59Z'
+          membershipExpiryDate: '2026-04-08T23:59:59-05:00'
         }
       ],
       'Élite - 9 meses': [
@@ -39,17 +40,28 @@ const CONFIGURACION_PROMOCIONES = {
           nombre: 'Simulación CES',
           membershipPlanId: 9,
           usarFechaInicio: false,
-          membershipExpiryDate: '2025-11-21T04:59:59Z'
+          membershipExpiryDate: '2025-11-20T23:59:59-05:00'
         },
         {
           nombre: 'Simulación UPB',
           membershipPlanId: 10,
           usarFechaInicio: false,
-          membershipExpiryDate: '2026-04-09T04:59:59Z'
+          membershipExpiryDate: '2026-04-08T23:59:59-05:00'
         }
       ]
     }
   }
+
+  // 💡 Puedes agregar más promociones aquí siguiendo el mismo formato:
+  // promocion_nombre: {
+  //   activa: true,
+  //   inicio: new Date('YYYY-MM-DDTHH:mm:ss-05:00'),
+  //   fin: new Date('YYYY-MM-DDTHH:mm:ss-05:00'),
+  //   memberships: {
+  //     'Élite - 9 meses': [...],
+  //     'Élite - 6 meses': [...]
+  //   }
+  // }
 };
 
 /**
@@ -59,9 +71,9 @@ const CONFIGURACION_ESTANDAR = {
   'Élite - 6 meses': [
     {
       nombre: 'Élite 6 meses',
-      membershipPlanId: 2,
+      membershipPlanId: 4,
       usarFechaInicio: true,
-      membershipDurationDays: 186
+      membershipDurationDays: 188
     }
   ],
   'Élite - 9 meses': [
@@ -69,7 +81,7 @@ const CONFIGURACION_ESTANDAR = {
       nombre: 'Élite 9 meses',
       membershipPlanId: 3,
       usarFechaInicio: true,
-      membershipDurationDays: 370
+      membershipDurationDays: 288
     }
   ]
 };
