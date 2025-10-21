@@ -193,10 +193,12 @@ function getCacheInfo() {
   };
 }
 
-// Inicializar caché al cargar el módulo
-refreshCache().catch(err => {
-  logger.error('[WO-CityCache] Error en inicialización automática:', err);
-});
+// Inicializar caché al cargar el módulo (después de un pequeño delay para que logger esté listo)
+setTimeout(() => {
+  refreshCache().catch(err => {
+    logger.error('[WO-CityCache] Error en inicialización automática:', err);
+  });
+}, 100);
 
 module.exports = {
   refreshCache,
