@@ -207,13 +207,19 @@ async function processWebhook(webhookId) {
     completedStages.worldoffice_customer = true;
 
     // NOTIFICACIÓN PASO 6: World Office
+    const cityText = webhook.customer_city || 'N/A';
+    const cityIdText = woCustomerResult.customerData?.cityId
+      ? `${woCustomerResult.customerData.cityId} (${woCustomerResult.customerData.cityName})`
+      : 'No encontrada';
+    const cityUsed = woCustomerResult.customerData?.cityName || 'N/A';
+
     await notificationService.notifyStep(6, 'GESTIÓN CLIENTE WORLD OFFICE', {
       'Cédula': paymentLinkData.identityDocument,
       'Nombre completo': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
       'Email': paymentLinkData.email,
       'Teléfono': paymentLinkData.phone,
-      'Ciudad (texto)': webhook.customer_city || 'N/A',
-      'Ciudad (ID en WO)': woCustomerResult.customerData?.cityId || 'No encontrada en caché',
+      'Ciudad recibida': cityText,
+      'Ciudad a usar en WO': `${cityUsed} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'})`,
       'Dirección': webhook.customer_address || 'N/A',
       'Acción': woCustomerResult.action === 'created_mock' ? '🆕 Cliente creado (MOCK)' : '🔄 Cliente actualizado (MOCK)',
       'Customer ID WO': woCustomerResult.customerId,

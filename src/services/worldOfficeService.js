@@ -40,14 +40,24 @@ async function findOrUpdateCustomer(customerData) {
 
     // Intentar obtener el ID de la ciudad si viene en los datos
     let cityId = null;
-    if (customerData.city) {
+    let cityName = customerData.city;
+
+    if (customerData.city && customerData.city !== 'N/A') {
       const cityFound = await cityCache.findCityByName(customerData.city);
       if (cityFound) {
         cityId = cityFound.id;
-        logger.info(`[WorldOffice] Ciudad encontrada: "${customerData.city}" → ID ${cityId}`);
+        cityName = cityFound.nombre;
+        logger.info(`[WorldOffice] Ciudad encontrada: "${customerData.city}" → ID ${cityId} (${cityName})`);
       } else {
-        logger.warn(`[WorldOffice] Ciudad no encontrada en caché: "${customerData.city}"`);
+        logger.warn(`[WorldOffice] Ciudad no encontrada en caché: "${customerData.city}". Usando Medellín por defecto.`);
+        cityId = 1; // Medellín por defecto
+        cityName = 'Medellín';
       }
+    } else {
+      // Si no hay ciudad o es "N/A", usar Medellín por defecto
+      logger.info(`[WorldOffice] Ciudad no proporcionada (N/A). Usando Medellín por defecto.`);
+      cityId = 1; // Medellín por defecto
+      cityName = 'Medellín';
     }
 
     // TODO: Implementar búsqueda de cliente
@@ -87,7 +97,7 @@ async function findOrUpdateCustomer(customerData) {
         email: customerData.email,
         phone: customerData.phone,
         cityId: cityId,
-        cityName: customerData.city,
+        cityName: cityName, // Usar el cityName procesado (real o por defecto)
         address: customerData.address
       },
       action: 'created_mock'
