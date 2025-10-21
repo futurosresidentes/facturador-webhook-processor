@@ -18,9 +18,91 @@ const woClient = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${config.worldOffice?.apiToken}`
+    'Authorization': config.worldOffice?.apiToken
   }
 });
+
+// Configuración de axios para Strapi
+const strapiClient = axios.create({
+  baseURL: config.strapi?.apiUrl,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${config.strapi?.apiToken}`
+  }
+});
+
+/**
+ * Helper: Separar nombres en primer y segundo nombre
+ * @param {string} fullName - Nombre completo
+ * @returns {Object} { primerNombre, segundoNombre }
+ */
+function splitNames(fullName) {
+  if (!fullName) return { primerNombre: '', segundoNombre: '' };
+
+  const parts = fullName.trim().split(/\s+/);
+  return {
+    primerNombre: parts[0] || '',
+    segundoNombre: parts.slice(1).join(' ') || ''
+  };
+}
+
+/**
+ * Helper: Buscar comercial en Strapi y luego en World Office
+ * @param {string} comercialName - Nombre del comercial
+ * @returns {Promise<number>} ID del comercial en WO (o 2259 por defecto)
+ */
+async function findComercialWOId(comercialName) {
+  try {
+    if (!comercialName) {
+      logger.info('[WorldOffice] No se proporcionó comercial, usando ID por defecto: 2259');
+      return 2259;
+    }
+
+    // Paso 1: Buscar en Strapi para obtener la cédula
+    logger.info(`[WorldOffice] Buscando comercial en Strapi: "${comercialName}"`);
+    const strapiResponse = await strapiClient.get('/api/comerciales', {
+      params: {
+        'filters[nombre][$eq]': comercialName
+      }
+    });
+
+    if (!strapiResponse.data?.data || strapiResponse.data.data.length === 0) {
+      logger.warn(`[WorldOffice] Comercial "${comercialName}" no encontrado en Strapi. Usando ID por defecto: 2259`);
+      return 2259;
+    }
+
+    const comercialData = strapiResponse.data.data[0];
+    const cedulaComercial = comercialData.numero_documento;
+
+    logger.info(`[WorldOffice] Comercial encontrado en Strapi - Cédula: ${cedulaComercial}`);
+
+    // Paso 2: Buscar en World Office por cédula
+    try {
+      const woResponse = await woClient.get(`/api/v1/terceros/identificacion/${cedulaComercial}`);
+
+      if (woResponse.data?.status === 'OK' && woResponse.data?.data?.id) {
+        const idWOComercial = woResponse.data.data.id;
+        logger.info(`[WorldOffice] Comercial encontrado en WO - ID: ${idWOComercial}`);
+        return idWOComercial;
+      }
+    } catch (woError) {
+      if (woError.response?.data?.status === 'NOT_FOUND') {
+        logger.warn(`[WorldOffice] Comercial con cédula ${cedulaComercial} no encontrado en WO. Usando ID por defecto: 2259`);
+      } else {
+        logger.error(`[WorldOffice] Error buscando comercial en WO:`, woError.message);
+      }
+      return 2259;
+    }
+
+    logger.warn(`[WorldOffice] No se pudo obtener ID del comercial. Usando ID por defecto: 2259`);
+    return 2259;
+
+  } catch (error) {
+    logger.error('[WorldOffice] Error en findComercialWOId:', error.message);
+    return 2259; // Siempre retornar el ID por defecto en caso de error
+  }
+}
 
 /**
  * PASO 6: Buscar o actualizar cliente en World Office
@@ -32,13 +114,14 @@ const woClient = axios.create({
  * @param {string} customerData.phone - Teléfono
  * @param {string} customerData.city - Nombre de la ciudad (opcional)
  * @param {string} customerData.address - Dirección (opcional)
- * @returns {Promise<Object>} customerId y customerData
+ * @param {string} customerData.comercial - Nombre del comercial (opcional)
+ * @returns {Promise<Object>} customerId, customerData, comercialWOId
  */
 async function findOrUpdateCustomer(customerData) {
   try {
     logger.info(`[WorldOffice] Buscando cliente con cédula: ${customerData.identityDocument}`);
 
-    // Intentar obtener el ID de la ciudad si viene en los datos
+    // PASO 1: Obtener el ID de la ciudad
     let cityId = null;
     let cityName = customerData.city;
 
@@ -60,63 +143,90 @@ async function findOrUpdateCustomer(customerData) {
       cityName = 'Medellín';
     }
 
-    // TODO: Implementar búsqueda de cliente
-    // const searchResponse = await woClient.get(`/customers/search`, {
-    //   params: { document: customerData.identityDocument }
-    // });
+    // PASO 2: Buscar cliente en World Office por cédula
+    let idWO = null;
+    let action = null;
 
-    // TODO: Si existe, comparar datos y actualizar si es necesario
-    // if (searchResponse.data.exists) {
-    //   const existingCustomer = searchResponse.data.customer;
-    //   const needsUpdate = compareCustomerData(existingCustomer, customerData);
-    //
-    //   if (needsUpdate) {
-    //     logger.info(`[WorldOffice] Actualizando cliente ${existingCustomer.id}`);
-    //     await woClient.put(`/customers/${existingCustomer.id}`, customerData);
-    //   }
-    //
-    //   return {
-    //     customerId: existingCustomer.id,
-    //     customerData: existingCustomer,
-    //     action: needsUpdate ? 'updated' : 'found'
-    //   };
-    // }
+    try {
+      const searchResponse = await woClient.get(`/api/v1/terceros/identificacion/${customerData.identityDocument}`);
 
-    // TODO: Si no existe, crear cliente nuevo
-    // logger.info(`[WorldOffice] Creando nuevo cliente`);
-    // const createResponse = await woClient.post('/customers', customerData);
+      if (searchResponse.data?.status === 'OK' && searchResponse.data?.data?.id) {
+        idWO = searchResponse.data.data.id;
+        action = 'found';
+        logger.info(`[WorldOffice] Cliente encontrado - ID: ${idWO}`);
+      }
+    } catch (searchError) {
+      if (searchError.response?.data?.status === 'NOT_FOUND') {
+        logger.info('[WorldOffice] Cliente no encontrado, se procederá a crear uno nuevo');
+      } else {
+        throw searchError; // Re-lanzar si es un error diferente
+      }
+    }
 
-    // MOCK - Remover cuando implementes la API real
-    logger.warn('[WorldOffice] MODO MOCK - Cliente simulado');
+    // PASO 3: Si no existe, crear cliente nuevo
+    if (!idWO) {
+      logger.info('[WorldOffice] Creando nuevo cliente en World Office');
+
+      // Separar nombres y apellidos
+      const nombres = splitNames(customerData.givenName);
+      const apellidos = splitNames(customerData.familyName);
+
+      const payload = {
+        idTerceroTipoIdentificacion: 3, // 3 = Cédula de Ciudadanía
+        identificacion: customerData.identityDocument,
+        primerNombre: nombres.primerNombre,
+        segundoNombre: nombres.segundoNombre,
+        primerApellido: apellidos.primerNombre,
+        segundoApellido: apellidos.segundoNombre,
+        idCiudad: cityId,
+        direccion: customerData.address || 'N/A',
+        telefono: customerData.phone || '',
+        email: customerData.email,
+        idClasificacionImpuestos: 1,
+        idTerceroTipoContribuyente: 6,
+        plazoDias: 1,
+        idTerceroTipos: [4], // 4 = Cliente
+        responsabilidadFiscal: [5, 7]
+      };
+
+      logger.info('[WorldOffice] Payload de creación:', JSON.stringify(payload, null, 2));
+
+      const createResponse = await woClient.post('/api/v1/terceros/crearTercero', payload);
+
+      if (createResponse.data?.data?.id) {
+        idWO = createResponse.data.data.id;
+        action = 'created';
+        logger.info(`[WorldOffice] Cliente creado exitosamente - ID: ${idWO}`);
+      } else {
+        throw new Error('No se recibió ID del cliente creado');
+      }
+    }
+
+    // PASO 4: Buscar ID del comercial en World Office
+    const comercialWOId = await findComercialWOId(customerData.comercial);
+
+    // Retornar datos completos
     return {
-      customerId: 'MOCK_CUSTOMER_' + Date.now(),
+      customerId: idWO,
       customerData: {
-        id: 'MOCK_CUSTOMER_' + Date.now(),
+        id: idWO,
         document: customerData.identityDocument,
         name: `${customerData.givenName} ${customerData.familyName}`,
         email: customerData.email,
         phone: customerData.phone,
         cityId: cityId,
-        cityName: cityName, // Usar el cityName procesado (real o por defecto)
+        cityName: cityName,
         address: customerData.address
       },
-      action: 'created_mock'
+      comercialWOId: comercialWOId,
+      action: action
     };
 
-    // Cuando implementes la API real, usa esto:
-    // const payload = {
-    //   document: customerData.identityDocument,
-    //   name: customerData.givenName,
-    //   lastName: customerData.familyName,
-    //   email: customerData.email,
-    //   phone: customerData.phone,
-    //   cityId: cityId, // ID obtenido del caché
-    //   address: customerData.address
-    // };
-    // const createResponse = await woClient.post('/customers', payload);
-
   } catch (error) {
-    logger.error('[WorldOffice] Error en findOrUpdateCustomer:', error);
+    logger.error('[WorldOffice] Error en findOrUpdateCustomer:', error.message);
+    if (error.response) {
+      logger.error('[WorldOffice] Respuesta de error:', JSON.stringify(error.response.data, null, 2));
+    }
     throw new Error(`Error gestionando cliente en World Office: ${error.message}`);
   }
 }

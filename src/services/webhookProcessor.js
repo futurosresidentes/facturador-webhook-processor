@@ -200,15 +200,24 @@ async function processWebhook(webhookId) {
       email: paymentLinkData.email,
       phone: paymentLinkData.phone,
       city: webhook.customer_city,
-      address: webhook.customer_address
+      address: webhook.customer_address,
+      comercial: paymentLinkData.comercial
     });
 
-    logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId}`);
+    logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId} | Comercial WO ID: ${woCustomerResult.comercialWOId}`);
     completedStages.worldoffice_customer = true;
 
     // NOTIFICACIÓN PASO 6: World Office
     const cityText = webhook.customer_city || 'N/A';
     const cityUsed = woCustomerResult.customerData?.cityName || 'N/A';
+
+    // Determinar el texto de la acción
+    let actionText = '❓ Acción desconocida';
+    if (woCustomerResult.action === 'created') {
+      actionText = '🆕 Cliente creado en WO';
+    } else if (woCustomerResult.action === 'found') {
+      actionText = '✅ Cliente ya existe en WO';
+    }
 
     await notificationService.notifyStep(6, 'GESTIÓN CLIENTE WORLD OFFICE', {
       'Cédula': paymentLinkData.identityDocument,
@@ -218,9 +227,10 @@ async function processWebhook(webhookId) {
       'Ciudad recibida': cityText,
       'Ciudad a usar en WO': `${cityUsed} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'})`,
       'Dirección': webhook.customer_address || 'N/A',
-      'Acción': woCustomerResult.action === 'created_mock' ? '🆕 Cliente creado (MOCK)' : '🔄 Cliente actualizado (MOCK)',
-      'Customer ID WO': woCustomerResult.customerId,
-      'Modo': '🟡 MOCK (simulado)',
+      'Acción': actionText,
+      '🆔 ID Cliente WO': woCustomerResult.customerId,
+      'Comercial': paymentLinkData.comercial || 'N/A',
+      '🆔 ID Comercial WO': woCustomerResult.comercialWOId,
       'Resultado': '✅ Cliente gestionado exitosamente'
     });
 
