@@ -87,6 +87,53 @@ const PRODUCT_INVENTORY_MAP = {
 // ==================== HELPER FUNCTIONS ====================
 
 /**
+ * Helper: Sistema de reintentos para operaciones de World Office
+ * @param {Function} operation - Función async que retorna una promesa
+ * @param {string} operationName - Nombre de la operación para logging
+ * @param {number} maxRetries - Número máximo de reintentos
+ * @param {number} retryDelay - Delay en ms entre reintentos
+ * @returns {Promise<any>} Resultado de la operación
+ */
+async function retryOperation(operation, operationName, maxRetries = config.worldOffice.maxRetries, retryDelay = config.worldOffice.retryDelay) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      logger.info(`[WorldOffice] ${operationName} - Intento ${attempt}/${maxRetries}`);
+      const result = await operation();
+
+      if (attempt > 1) {
+        logger.info(`[WorldOffice] ✅ ${operationName} exitoso después de ${attempt} intentos`);
+      }
+
+      return result;
+    } catch (error) {
+      lastError = error;
+      const isLastAttempt = attempt === maxRetries;
+
+      // Log del error
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        logger.warn(`[WorldOffice] ⏱️ Timeout en ${operationName} - Intento ${attempt}/${maxRetries}`);
+      } else if (error.response) {
+        logger.warn(`[WorldOffice] ❌ Error ${error.response.status} en ${operationName} - Intento ${attempt}/${maxRetries}`);
+      } else {
+        logger.warn(`[WorldOffice] ❌ Error en ${operationName}: ${error.message} - Intento ${attempt}/${maxRetries}`);
+      }
+
+      // Si no es el último intento, esperar antes de reintentar
+      if (!isLastAttempt) {
+        logger.info(`[WorldOffice] ⏳ Esperando ${retryDelay}ms antes del siguiente intento...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+  }
+
+  // Si llegamos aquí, todos los intentos fallaron
+  logger.error(`[WorldOffice] ❌ ${operationName} falló después de ${maxRetries} intentos`);
+  throw lastError;
+}
+
+/**
  * Helper: Quitar acentos de un string
  * @param {string} str - String con acentos
  * @returns {string} String sin acentos
@@ -199,10 +246,13 @@ async function findComercialWOId(comercialName) {
 
     logger.info(`[WorldOffice] Comercial encontrado en Strapi - Cédula: ${cedulaComercial}`);
 
-    // Paso 2: Buscar en World Office por cédula
+    // Paso 2: Buscar en World Office por cédula (con reintentos)
     logger.info(`[WorldOffice] Buscando comercial en WO con cédula: ${cedulaComercial}`);
     try {
-      const woResponse = await woClient.get(`/api/v1/terceros/identificacion/${cedulaComercial}`);
+      const woResponse = await retryOperation(
+        () => woClient.get(`/api/v1/terceros/identificacion/${cedulaComercial}`),
+        `Búsqueda de comercial (${cedulaComercial})`
+      );
 
       logger.info(`[WorldOffice] Respuesta WO status: ${woResponse.data?.status}`);
       logger.info(`[WorldOffice] Respuesta WO data.id: ${woResponse.data?.data?.id}`);
@@ -269,12 +319,15 @@ async function findOrUpdateCustomer(customerData) {
       cityName = 'Medellín';
     }
 
-    // PASO 2: Buscar cliente en World Office por cédula
+    // PASO 2: Buscar cliente en World Office por cédula (con reintentos)
     let idWO = null;
     let action = null;
 
     try {
-      const searchResponse = await woClient.get(`/api/v1/terceros/identificacion/${customerData.identityDocument}`);
+      const searchResponse = await retryOperation(
+        () => woClient.get(`/api/v1/terceros/identificacion/${customerData.identityDocument}`),
+        `Búsqueda de cliente (${customerData.identityDocument})`
+      );
 
       if (searchResponse.data?.status === 'OK' && searchResponse.data?.data?.id) {
         idWO = searchResponse.data.data.id;
@@ -317,7 +370,10 @@ async function findOrUpdateCustomer(customerData) {
 
       logger.info('[WorldOffice] Payload de creación:', JSON.stringify(payload, null, 2));
 
-      const createResponse = await woClient.post('/api/v1/terceros/crearTercero', payload);
+      const createResponse = await retryOperation(
+        () => woClient.post('/api/v1/terceros/crearTercero', payload),
+        `Creación de cliente (${customerData.identityDocument})`
+      );
 
       if (createResponse.data?.data?.id) {
         idWO = createResponse.data.data.id;
@@ -525,7 +581,10 @@ async function createInvoice(invoiceData) {
 
     logger.info('[WorldOffice] Payload de factura:', JSON.stringify(payload, null, 2));
 
-    const response = await woClient.post('/api/v1/documentos/crearDocumentoVenta', payload);
+    const response = await retryOperation(
+      () => woClient.post('/api/v1/documentos/crearDocumentoVenta', payload),
+      `Creación de factura (Cliente: ${customerId}, Monto: $${amount})`
+    );
 
     if (response.status === 201 && response.data?.data?.id) {
       const documentoId = response.data.data.id;
@@ -573,10 +632,13 @@ async function accountInvoice(documentoId) {
       };
     }
 
-    // MODO PRODUCCIÓN: Contabilizar real
+    // MODO PRODUCCIÓN: Contabilizar real (con reintentos)
     logger.info('[WorldOffice] 🟢 MODO PRODUCCIÓN - Contabilizando documento');
 
-    const response = await woClient.post(`/api/v1/documentos/contabilizarDocumento/${documentoId}`, {});
+    const response = await retryOperation(
+      () => woClient.post(`/api/v1/documentos/contabilizarDocumento/${documentoId}`, {}),
+      `Contabilización de documento (${documentoId})`
+    );
 
     if (response.data?.status === 'OK') {
       logger.info(`[WorldOffice] ✅ Documento contabilizado - ID: ${documentoId}`);
@@ -632,11 +694,14 @@ async function emitDianInvoice(documentoId) {
       };
     }
 
-    // MODO PRODUCCIÓN: Emitir real
+    // MODO PRODUCCIÓN: Emitir real (con reintentos)
     logger.info('[WorldOffice] 🟢 MODO PRODUCCIÓN - Emitiendo ante DIAN');
 
     try {
-      const response = await woClient.post(`/api/v1/documentos/facturaElectronica/${documentoId}`, {});
+      const response = await retryOperation(
+        () => woClient.post(`/api/v1/documentos/facturaElectronica/${documentoId}`, {}),
+        `Emisión DIAN (${documentoId})`
+      );
 
       if (response.data?.status === 'ACCEPTED') {
         logger.info(`[WorldOffice] ✅ Factura electrónica emitida - Documento: ${documentoId}`);

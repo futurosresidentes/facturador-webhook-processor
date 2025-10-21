@@ -82,7 +82,9 @@ module.exports = {
     username: process.env.WORLDOFFICE_USERNAME,
     password: process.env.WORLDOFFICE_PASSWORD,
     modoProduccion: process.env.WORLDOFFICE_MODO_PRODUCCION === 'true',
-    emitirDian: process.env.WORLDOFFICE_EMITIR_DIAN === 'true'
+    emitirDian: process.env.WORLDOFFICE_EMITIR_DIAN === 'true',
+    maxRetries: parseInt(process.env.WORLDOFFICE_MAX_RETRIES) || 5,
+    retryDelay: parseInt(process.env.WORLDOFFICE_RETRY_DELAY) || 1000
   },
 
   // Strapi Facturación
