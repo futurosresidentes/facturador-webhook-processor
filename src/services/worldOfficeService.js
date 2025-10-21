@@ -383,12 +383,17 @@ async function createInvoice(invoiceData) {
 
       if (amount <= TOPE_EXENTO_IVA) {
         const valorUnitario = inventoryConfig.hasIVA ? amount / 1.19 : amount;
+        const conceptoRenglon = inventoryConfig.id === 1010 ? getISBNs(product, amount) : "";
+
         renglones.push({
           idInventario: inventoryConfig.id,
           cantidad: 1,
           valorUnitario,
           valorTotal: valorUnitario,
-          iva: inventoryConfig.hasIVA ? valorUnitario * 0.19 : 0
+          iva: inventoryConfig.hasIVA ? valorUnitario * 0.19 : 0,
+          idCentroCosto: inventoryConfig.centroCosto,
+          idBodega: 1,
+          concepto: conceptoRenglon
         });
       } else {
         renglones.push({
@@ -396,14 +401,20 @@ async function createInvoice(invoiceData) {
           cantidad: 1,
           valorUnitario: TOPE_EXENTO_IVA,
           valorTotal: TOPE_EXENTO_IVA,
-          iva: 0
+          iva: 0,
+          idCentroCosto: 1,
+          idBodega: 1,
+          concepto: getISBNs(product, TOPE_EXENTO_IVA)
         });
         renglones.push({
           idInventario: ID_INVENTARIO_MIR,
           cantidad: 1,
           valorUnitario: (amount - TOPE_EXENTO_IVA) / 1.19,
           valorTotal: (amount - TOPE_EXENTO_IVA) / 1.19,
-          iva: ((amount - TOPE_EXENTO_IVA) / 1.19) * 0.19
+          iva: ((amount - TOPE_EXENTO_IVA) / 1.19) * 0.19,
+          idCentroCosto: 1,
+          idBodega: 1,
+          concepto: ""
         });
       }
 
@@ -440,9 +451,12 @@ async function createInvoice(invoiceData) {
     };
 
     // Construir renglones según el monto
+    const renglonesConIva = [];
+
     if (amount <= TOPE_EXENTO_IVA) {
       // 1 solo producto
       const valorUnitario = inventoryConfig.hasIVA ? amount / 1.19 : amount;
+      const ivaCalculado = inventoryConfig.hasIVA ? valorUnitario * 0.19 : 0;
       const conceptoRenglon = inventoryConfig.id === 1010 ? getISBNs(product, amount) : "";
 
       payload.reglones.push({
@@ -458,8 +472,18 @@ async function createInvoice(invoiceData) {
         obsequio: false,
         valorTotalRenglon: 0
       });
+
+      // Agregar versión con IVA para el retorno
+      renglonesConIva.push({
+        ...payload.reglones[0],
+        iva: ivaCalculado
+      });
     } else {
       // 2 productos (libros + MIR)
+      const conceptoLibros = getISBNs(product, TOPE_EXENTO_IVA);
+      const valorMIR = (amount - TOPE_EXENTO_IVA) / 1.19;
+      const ivaMIR = valorMIR * 0.19;
+
       payload.reglones.push({
         idInventario: 1010,
         unidadMedida: "und",
@@ -468,7 +492,7 @@ async function createInvoice(invoiceData) {
         valorTotal: TOPE_EXENTO_IVA,
         idBodega: 1,
         idCentroCosto: 1,
-        concepto: getISBNs(product, TOPE_EXENTO_IVA),
+        concepto: conceptoLibros,
         porDescuento: 0,
         obsequio: false,
         valorTotalRenglon: 0
@@ -478,14 +502,24 @@ async function createInvoice(invoiceData) {
         idInventario: ID_INVENTARIO_MIR,
         unidadMedida: "und",
         cantidad: 1,
-        valorUnitario: (amount - TOPE_EXENTO_IVA) / 1.19,
-        valorTotal: (amount - TOPE_EXENTO_IVA) / 1.19,
+        valorUnitario: valorMIR,
+        valorTotal: valorMIR,
         idBodega: 1,
         idCentroCosto: 1,
         concepto: "",
         porDescuento: 0,
         obsequio: false,
         valorTotalRenglon: 0
+      });
+
+      // Agregar versiones con IVA para el retorno
+      renglonesConIva.push({
+        ...payload.reglones[0],
+        iva: 0
+      });
+      renglonesConIva.push({
+        ...payload.reglones[1],
+        iva: ivaMIR
       });
     }
 
@@ -502,7 +536,7 @@ async function createInvoice(invoiceData) {
         numeroFactura: response.data.data.numero || 'FV-' + documentoId,
         monto: amount,
         payload,
-        renglones: payload.reglones,
+        renglones: renglonesConIva, // Retornar renglones con campo IVA
         simulado: false
       };
     }

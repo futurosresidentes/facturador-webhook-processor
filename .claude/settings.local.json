@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git commit -m \"$(cat <<''EOF''\nfix: Agregar import de config faltante en webhookProcessor\n\nPROBLEMA:\n- Error: ReferenceError: config is not defined\n- El código intentaba usar config.frapp.modoProduccion sin importar el módulo\n\nSOLUCIÓN:\n- Agregar: const config = require(''../config/env'');\n- Línea 17 en webhookProcessor.js\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(timeout 20 npm start:*)"
     ],
     "deny": [],
     "ask": []

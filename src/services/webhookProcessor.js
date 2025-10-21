@@ -320,6 +320,12 @@ async function processWebhook(webhookId) {
       completedStages.worldoffice_invoice = true;
       logger.info(`[Processor] Factura creada - Documento ID: ${invoiceResult.documentoId}`);
 
+      // Loguear el payload completo de la factura para debugging
+      if (invoiceResult.payload) {
+        logger.info(`[Processor] 📋 Payload completo enviado a World Office:`);
+        logger.info(JSON.stringify(invoiceResult.payload, null, 2));
+      }
+
       // Preparar información de los renglones para la notificación
       let renglonesDetalle = '';
       if (invoiceResult.renglones && invoiceResult.renglones.length > 0) {
@@ -338,7 +344,7 @@ async function processWebhook(webhookId) {
                                  `ID ${renglon.idInventario}`;
 
           const valorUnitario = renglon.valorUnitario || renglon.valorTotal || 0;
-          const iva = renglon.iva || (valorUnitario * 0.19);
+          const iva = renglon.iva || 0; // Ya viene calculado correctamente desde worldOfficeService
           const totalConIva = valorUnitario + iva;
 
           let detalle = `${numero}️⃣ Producto: ${inventarioInfo} (ID: ${renglon.idInventario})\n`;
