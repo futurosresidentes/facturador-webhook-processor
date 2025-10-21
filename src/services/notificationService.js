@@ -3,7 +3,54 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 
 /**
- * Envía una notificación a Google Chat
+ * Sistema de reintentos para notificaciones de Google Chat
+ * @param {Function} operation - Función que envía la notificación
+ * @param {string} operationName - Nombre de la operación para logging
+ * @param {number} maxRetries - Número máximo de reintentos (default: 5)
+ * @returns {Promise<void>}
+ */
+async function retryNotification(operation, operationName, maxRetries = 5) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await operation();
+
+      if (attempt > 1) {
+        logger.info(`[Notification] ✅ ${operationName} exitoso después de ${attempt} intentos`);
+      }
+
+      return; // Éxito
+    } catch (error) {
+      lastError = error;
+      const isLastAttempt = attempt === maxRetries;
+
+      // Detectar tipo de error
+      if (error.response?.status === 429) {
+        logger.warn(`[Notification] ⏱️ Rate limit (429) en ${operationName} - Intento ${attempt}/${maxRetries}`);
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        logger.warn(`[Notification] ⏱️ Timeout en ${operationName} - Intento ${attempt}/${maxRetries}`);
+      } else {
+        logger.warn(`[Notification] ❌ Error en ${operationName}: ${error.message} - Intento ${attempt}/${maxRetries}`);
+      }
+
+      // Si no es el último intento, esperar con backoff exponencial
+      if (!isLastAttempt) {
+        // Backoff exponencial: 1s, 2s, 4s, 8s, 16s
+        const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 16000);
+        logger.info(`[Notification] ⏳ Esperando ${delayMs}ms antes del siguiente intento...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  // Si llegamos aquí, todos los intentos fallaron
+  logger.error(`[Notification] ❌ ${operationName} falló después de ${maxRetries} intentos: ${lastError.message}`);
+  // NO lanzar error - las notificaciones no deben detener el proceso
+}
+
+/**
+ * Envía una notificación a Google Chat con sistema de reintentos
  * @param {string} webhookUrl - URL del webhook de Google Chat
  * @param {string} message - Mensaje a enviar
  */
@@ -13,15 +60,16 @@ async function sendToGoogleChat(webhookUrl, message) {
     return;
   }
 
-  try {
-    await axios.post(webhookUrl, { text: message }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 5000
-    });
-    logger.info('[Notification] Notificación enviada a Google Chat');
-  } catch (error) {
-    logger.error('[Notification] Error enviando a Google Chat:', error.message);
-  }
+  await retryNotification(
+    async () => {
+      await axios.post(webhookUrl, { text: message }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000 // Aumentado a 10 segundos
+      });
+      logger.info('[Notification] Notificación enviada a Google Chat');
+    },
+    'Envío a Google Chat'
+  );
 }
 
 /**
