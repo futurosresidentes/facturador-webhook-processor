@@ -11,6 +11,7 @@ const { Webhook, WebhookLog } = require('../models');
 const fr360Service = require('./fr360Service');
 const crmService = require('./crmService');
 const membershipService = require('./membershipService');
+const worldOfficeService = require('./worldOfficeService');
 const notificationService = require('./notificationService');
 const { requiresMemberships } = require('../utils/productFilter');
 const logger = require('../config/logger');
@@ -124,6 +125,23 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] Producto no requiere membresías: ${paymentLinkData.product}`);
     }
 
+    // STAGE 6: Buscar o crear cliente en World Office
+    // Esto incluirá la búsqueda de ciudad en el caché
+    logger.info(`[Processor] PASO 6: Gestionando cliente en World Office`);
+
+    const woCustomerResult = await worldOfficeService.findOrUpdateCustomer({
+      identityDocument: paymentLinkData.identityDocument,
+      givenName: paymentLinkData.givenName,
+      familyName: paymentLinkData.familyName,
+      email: paymentLinkData.email,
+      phone: paymentLinkData.phone,
+      city: webhook.customer_city,
+      address: webhook.customer_address
+    });
+
+    logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId}`);
+    completedStages.worldoffice_customer = true;
+
     // Preparar mensaje final según resultado
     const finalDetails = debeCrearMemberships && activationUrl
       ? `Completado exitosamente. Producto: ${paymentLinkData.product} | Membresías creadas | URL: ${activationUrl}`
@@ -175,6 +193,9 @@ async function processWebhook(webhookId) {
 
       // Membresías creadas
       memberships: memberships.length > 0 ? memberships : undefined,
+
+      // World Office
+      worldOfficeCustomerId: woCustomerResult.customerId,
 
       // Métricas de performance
       totalRetries: totalRetries,
