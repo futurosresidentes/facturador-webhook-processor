@@ -14,6 +14,7 @@ const membershipService = require('./membershipService');
 const worldOfficeService = require('./worldOfficeService');
 const notificationService = require('./notificationService');
 const { requiresMemberships } = require('../utils/productFilter');
+const config = require('../config/env');
 const logger = require('../config/logger');
 
 /**
