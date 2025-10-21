@@ -78,25 +78,29 @@ async function findComercialWOId(comercialName) {
     logger.info(`[WorldOffice] Comercial encontrado en Strapi - Cédula: ${cedulaComercial}`);
 
     // Paso 2: Buscar en World Office por cédula
+    logger.info(`[WorldOffice] Buscando comercial en WO con cédula: ${cedulaComercial}`);
     try {
       const woResponse = await woClient.get(`/api/v1/terceros/identificacion/${cedulaComercial}`);
 
+      logger.info(`[WorldOffice] Respuesta WO status: ${woResponse.data?.status}`);
+      logger.info(`[WorldOffice] Respuesta WO data.id: ${woResponse.data?.data?.id}`);
+
       if (woResponse.data?.status === 'OK' && woResponse.data?.data?.id) {
         const idWOComercial = woResponse.data.data.id;
-        logger.info(`[WorldOffice] Comercial encontrado en WO - ID: ${idWOComercial}`);
+        logger.info(`[WorldOffice] ✅ Comercial encontrado en WO - ID: ${idWOComercial}`);
         return idWOComercial;
+      } else {
+        logger.warn(`[WorldOffice] Respuesta de WO no tiene el formato esperado. Status: ${woResponse.data?.status}, ID: ${woResponse.data?.data?.id}`);
+        return 2259;
       }
     } catch (woError) {
       if (woError.response?.data?.status === 'NOT_FOUND') {
-        logger.warn(`[WorldOffice] Comercial con cédula ${cedulaComercial} no encontrado en WO. Usando ID por defecto: 2259`);
+        logger.warn(`[WorldOffice] Comercial con cédula ${cedulaComercial} no encontrado en WO (NOT_FOUND). Usando ID por defecto: 2259`);
       } else {
-        logger.error(`[WorldOffice] Error buscando comercial en WO:`, woError.message);
+        logger.error(`[WorldOffice] Error buscando comercial en WO - Status: ${woError.response?.status}, Message: ${woError.message}`);
       }
       return 2259;
     }
-
-    logger.warn(`[WorldOffice] No se pudo obtener ID del comercial. Usando ID por defecto: 2259`);
-    return 2259;
 
   } catch (error) {
     logger.error('[WorldOffice] Error en findComercialWOId:', error.message);
