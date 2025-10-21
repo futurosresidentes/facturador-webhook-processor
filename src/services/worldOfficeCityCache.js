@@ -35,6 +35,12 @@ function normalizeString(str) {
  */
 async function fetchCitiesFromAPI() {
   try {
+    // Validar que las credenciales estén configuradas
+    if (!config.worldOffice?.apiUrl || !config.worldOffice?.apiToken) {
+      logger.warn('[WO-CityCache] ⚠️  Variables de entorno no configuradas (WORLDOFFICE_API_URL o WORLDOFFICE_API_TOKEN). Caché de ciudades deshabilitado.');
+      return [];
+    }
+
     logger.info('[WO-CityCache] Consultando ciudades desde World Office API...');
 
     const response = await axios.post(
