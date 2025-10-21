@@ -73,6 +73,11 @@ async function startServer() {
       logger.info(`Environment: ${config.nodeEnv}`);
       logger.info(`Frapp Mode: ${config.frapp.modoProduccion ? 'PRODUCTION' : 'TESTING'}`);
       logger.info(`======================================`);
+
+      // Inicializar caché de ciudades de World Office
+      setTimeout(() => {
+        require('./services/worldOfficeCityCache');
+      }, 500);
     });
 
   } catch (error) {
