@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Agregar notificaciones paso a paso en Google Chat para debugging detallado\n\nNUEVO: notificationService.notifyStep()\n- Envía mensajes paso a paso del procesamiento a Google Chat\n- Muestra datos completos de cada etapa\n- Emojis únicos para cada paso (📝📍👥🎯📞🏢)\n- Formato estructurado y fácil de leer\n\nNOTIFICACIONES IMPLEMENTADAS:\n\n📝 PASO 0: WEBHOOK RECIBIDO\n- Ref Payco, Invoice ID, Email, Producto\n- Monto, Ciudad, Dirección\n\n📝 PASO 1: EXTRACCIÓN INVOICE ID\n- Invoice ID completo vs extraído\n- Resultado de extracción\n\n🔍 PASO 2: CONSULTA FR360\n- Datos del payment link\n- Información del cliente\n- Comercial, fecha de acceso\n\n👥 PASO 3: GESTIÓN CRM\n- Email, CRM ID\n- Acción (creado/actualizado)\n- Datos del contacto\n\n🎯 PASO 4: MEMBRESÍAS\n- Producto, membresías creadas\n- Activation URL\n- Modo TESTING\n\n🏢 PASO 6: WORLD OFFICE (¡INCLUYE BÚSQUEDA DE CIUDAD!)\n- Datos del cliente\n- ⭐ Ciudad (texto) → Ciudad (ID en WO)\n- Dirección, Customer ID\n- Modo MOCK\n\nVENTAJAS:\n- Ver TODO el flujo en tiempo real en Google Chat\n- No necesitas revisar logs de Render\n- Datos completos y formateados\n- Ideal para debugging y análisis\n- Se ve claramente la búsqueda de ciudad funcionando\n\nSIGUIENTE PASO:\n- Cuando llegue un webhook, recibirás 6-7 mensajes\n  detallando cada paso del proceso\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"chore: Eliminar variable cityIdText no utilizada\")"
     ],
     "deny": [],
     "ask": []

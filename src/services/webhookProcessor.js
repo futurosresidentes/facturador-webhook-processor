@@ -208,9 +208,6 @@ async function processWebhook(webhookId) {
 
     // NOTIFICACIÓN PASO 6: World Office
     const cityText = webhook.customer_city || 'N/A';
-    const cityIdText = woCustomerResult.customerData?.cityId
-      ? `${woCustomerResult.customerData.cityId} (${woCustomerResult.customerData.cityName})`
-      : 'No encontrada';
     const cityUsed = woCustomerResult.customerData?.cityName || 'N/A';
 
     await notificationService.notifyStep(6, 'GESTIÓN CLIENTE WORLD OFFICE', {
