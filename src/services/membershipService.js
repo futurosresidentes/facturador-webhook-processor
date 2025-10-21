@@ -31,7 +31,8 @@ async function createMemberships(params) {
     phone,
     product,
     accessDate,
-    webhookId
+    webhookId,
+    startTimestamp // Timestamp de inicio del paso para calcular duración
   } = params;
 
   const modoActual = config.frapp.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
@@ -256,6 +257,9 @@ async function createMemberships(params) {
     ? '✅ MEMBRESÍAS CREADAS EN PRODUCCIÓN'
     : '🟡 SIMULACIÓN: MEMBRESÍAS QUE SE CREARÍAN';
 
+  // Calcular duración del paso
+  const paso3Duration = startTimestamp ? Date.now() - startTimestamp : null;
+
   await notificationService.notifyStep(3, 'CREACIÓN DE MEMBRESÍAS (FRAPP)', {
     'Producto': product,
     'Email': email,
@@ -266,7 +270,7 @@ async function createMemberships(params) {
     'Membresías': `\n${resumenMensaje}`,
     'Activation URL': activationUrl || 'N/A',
     'Resultado': tituloModo
-  });
+  }, paso3Duration);
 
   logger.info(`[Membership] Proceso completado. Activation URL: ${activationUrl || 'N/A'}`);
 

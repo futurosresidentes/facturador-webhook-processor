@@ -190,8 +190,9 @@ async function notifyFrapp(title, details) {
  * @param {number} step - Número del paso (1-10)
  * @param {string} title - Título del paso
  * @param {Object} data - Datos a mostrar
+ * @param {number} durationMs - Duración del paso en milisegundos (opcional)
  */
-async function notifyStep(step, title, data = {}) {
+async function notifyStep(step, title, data = {}, durationMs = null) {
   const emojis = {
     1: '📝',
     2: '🔍',
@@ -230,7 +231,15 @@ async function notifyStep(step, title, data = {}) {
   }
 
   messageParts.push('');
-  messageParts.push(`⏱️ ${new Date().toISOString()}`);
+
+  // Agregar timestamp con duración si está disponible
+  const timestamp = new Date().toISOString();
+  if (durationMs !== null) {
+    const durationSeconds = (durationMs / 1000).toFixed(2);
+    messageParts.push(`⏱️ ${timestamp} (${durationSeconds}s)`);
+  } else {
+    messageParts.push(`⏱️ ${timestamp}`);
+  }
 
   const message = messageParts.join('\n');
   await sendToGoogleChat(config.googleChat.successWebhook, message);
