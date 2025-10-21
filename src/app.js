@@ -75,6 +75,7 @@ async function startServer() {
       logger.info(`======================================`);
 
       // Inicializar caché de ciudades de World Office
+      // Esto cargará las ~1100 ciudades de Colombia desde la API de WO
       setTimeout(() => {
         require('./services/worldOfficeCityCache');
       }, 500);
