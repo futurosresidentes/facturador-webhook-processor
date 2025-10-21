@@ -7,6 +7,15 @@ const { addDays, formatForFR360, isValidDate } = require('../utils/dateHelpers')
 const { Membership } = require('../models');
 const notificationService = require('./notificationService');
 
+// Etiquetas para aplicar según membershipPlanId
+const ETIQUETAS_POR_PLAN = {
+  1: 1176,  // Élite 12 meses
+  3: 1175,  // Élite 9 meses
+  4: 1174   // Élite 6 meses
+};
+
+const ETIQUETA_NUEVA_PLATAFORMA = 1172;
+
 /**
  * Crea membresías para un usuario
  * @param {Object} params - Parámetros del usuario
@@ -100,23 +109,36 @@ async function createMemberships(params) {
     } else {
       // Usar fecha de hoy como inicio y fecha fija como fin
       membershipStartDate = formatForFR360(new Date());
-      membershipExpiryDate = configMembership.membershipExpiryDate;
+      membershipExpiryDate = formatForFR360(configMembership.fechaFinFija);
 
-      const fechaFin = new Date(membershipExpiryDate);
+      const fechaFin = configMembership.fechaFinFija;
       const fechaInicio = new Date(membershipStartDate);
       membershipDurationDays = Math.ceil((fechaFin - fechaInicio) / (1000 * 60 * 60 * 24));
 
-      logger.info(`[Membership] Start: ${membershipStartDate} | Expiry (fija): ${membershipExpiryDate} | Duration: ${membershipDurationDays} días`);
+      logger.info(`[Membership] Start: ${membershipStartDate} | Fecha fin fija: ${membershipExpiryDate} | Duration calculada: ${membershipDurationDays} días`);
     }
 
     // 7. Preparar payload para API
     const payload = {
       ...datosUsuario,
       membershipPlanId: configMembership.membershipPlanId,
-      membershipStartDate,
-      membershipExpiryDate,
-      membershipDurationDays
+      membershipStartDate
     };
+
+    // Si usa fechainicio + duración: pasar membershipDurationDays
+    if (configMembership.usarFechaInicio) {
+      payload.membershipDurationDays = membershipDurationDays;
+    }
+    // Si tiene fecha fija de fin: pasar membershipEndDate en vez de duration
+    else {
+      payload.membershipEndDate = membershipExpiryDate;
+    }
+
+    // Si no es el primero, indicar que cree membership en usuario existente
+    if (!esPrimero) {
+      payload.createMembershipIfUserExists = true;
+      payload.allowDuplicateMemberships = false;
+    }
 
     // 8. Registrar en BD antes de llamar API
     const membershipRecord = {
@@ -146,7 +168,8 @@ async function createMemberships(params) {
         planId: configMembership.membershipPlanId,
         inicio: membershipStartDate,
         fin: membershipExpiryDate,
-        duracion: membershipDurationDays,
+        duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
+        usaDuracion: configMembership.usarFechaInicio,
         simulado: true
       });
 
@@ -176,7 +199,8 @@ async function createMemberships(params) {
             planId: configMembership.membershipPlanId,
             inicio: membershipStartDate,
             fin: membershipExpiryDate,
-            duracion: membershipDurationDays,
+            duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
+            usaDuracion: configMembership.usarFechaInicio,
             simulado: false,
             responseData: response.data
           });
@@ -203,10 +227,30 @@ async function createMemberships(params) {
     }
   }
 
-  // 11. Notificar resultado
-  const resumenMensaje = membershipsCreadas.map((m, idx) =>
-    `${idx + 1}. ${m.nombre} (Plan ID: ${m.planId})\n   • Inicia: ${m.inicio}\n   • ${m.duracion ? `Duración: ${m.duracion} días` : `Fin: ${m.fin}`}`
-  ).join('\n\n');
+  // 11. Preparar etiquetas a aplicar
+  const etiquetas = [ETIQUETA_NUEVA_PLATAFORMA];
+
+  // Agregar etiqueta según el primer membershipPlanId
+  const primerPlanId = membershipsConfig[0].membershipPlanId;
+  if (ETIQUETAS_POR_PLAN[primerPlanId]) {
+    etiquetas.push(ETIQUETAS_POR_PLAN[primerPlanId]);
+  }
+
+  logger.info(`[Membership] Etiquetas a aplicar: ${etiquetas.join(', ')}`);
+
+  // 12. Notificar resultado
+  const resumenMensaje = membershipsCreadas.map((m, idx) => {
+    let detalle = `${idx + 1}. ${m.nombre} (Plan ID: ${m.planId})\n`;
+    detalle += `   • Inicia: ${m.inicio}\n`;
+
+    if (m.usaDuracion) {
+      detalle += `   • Duración: ${m.duracion} días`;
+    } else {
+      detalle += `   • Fecha fin fija: ${m.fin}`;
+    }
+
+    return detalle;
+  }).join('\n\n');
 
   const notificationData = {
     'Cliente': `${givenName} ${familyName}`,
@@ -227,7 +271,12 @@ async function createMemberships(params) {
 
   logger.info(`[Membership] Proceso completado. Activation URL: ${activationUrl || 'N/A'}`);
 
-  return activationUrl;
+  // 13. Retornar datos completos (activationUrl, etiquetas, memberships)
+  return {
+    activationUrl,
+    etiquetas,
+    membershipsCreadas
+  };
 }
 
 module.exports = {

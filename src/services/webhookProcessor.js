@@ -7,7 +7,7 @@
  * 4. Envía notificaciones de éxito/error
  */
 
-const { Webhook, WebhookLog } = require('../models');
+const { Webhook, WebhookLog, Contact } = require('../models');
 const fr360Service = require('./fr360Service');
 const crmService = require('./crmService');
 const membershipService = require('./membershipService');
@@ -103,38 +103,9 @@ async function processWebhook(webhookId) {
       'Resultado': '✅ Datos obtenidos exitosamente'
     });
 
-    // STAGE 3: Registrar búsqueda/creación de contacto en CRM
-    await WebhookLog.create({
-      webhook_id: webhookId,
-      stage: 'crm_upsert',
-      status: 'processing',
-      details: `Buscando o creando contacto en CRM: ${paymentLinkData.email}`
-    });
-
-    // Buscar o crear contacto en ActiveCampaign
-    const contact = await crmService.findOrCreateContact(paymentLinkData);
-    logger.info(`[Processor] Contacto procesado con CRM ID: ${contact.crm_id}`);
-    completedStages.crm = true;
-
-    // El crmService actual no devuelve si fue creado o actualizado
-    // Por ahora asumiremos que siempre es 'updated' hasta migrar a crmService.v2.js
-    const crmAction = 'updated';
-
-    // NOTIFICACIÓN PASO 3: CRM
-    await notificationService.notifyStep(3, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
-      'Email': paymentLinkData.email,
-      'Acción': crmAction === 'created' ? '🆕 Contacto creado' : '🔄 Contacto actualizado',
-      'CRM ID': contact.crm_id,
-      'Nombre': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
-      'Teléfono': paymentLinkData.phone,
-      'Cédula': paymentLinkData.identityDocument,
-      'Resultado': '✅ Contacto gestionado exitosamente'
-    });
-
-    // STAGE 4: Verificar si el producto requiere creación de membresías
+    // STAGE 3: Verificar si el producto requiere creación de membresías
     const debeCrearMemberships = requiresMemberships(paymentLinkData.product);
-    let activationUrl = null;
-    let memberships = [];
+    let membershipResult = null;
 
     if (debeCrearMemberships) {
       // Registrar creación de membresías
@@ -145,9 +116,17 @@ async function processWebhook(webhookId) {
         details: `Creando membresías para producto: ${paymentLinkData.product}`
       });
 
-      // Crear membresías en FR360
-      activationUrl = await membershipService.createMemberships({
-        contactId: contact.id,
+      // NOTIFICACIÓN PASO 3: Membresías
+      await notificationService.notifyStep(3, 'CREACIÓN DE MEMBRESÍAS (FRAPP)', {
+        'Producto': paymentLinkData.product,
+        'Email': paymentLinkData.email,
+        'Nombre': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
+        'Estado': '🔄 Procesando...'
+      });
+
+      // Crear membresías en FR360 (sin contactId aún)
+      membershipResult = await membershipService.createMemberships({
+        contactId: null, // Aún no tenemos contactId de CRM
         identityDocument: paymentLinkData.identityDocument,
         email: paymentLinkData.email,
         givenName: paymentLinkData.givenName,
@@ -158,30 +137,16 @@ async function processWebhook(webhookId) {
         webhookId: webhookId
       });
 
-      logger.info(`[Processor] Membresías procesadas. Activation URL: ${activationUrl || 'N/A'}`);
+      // membershipResult contiene: { activationUrl, etiquetas, membershipsCreadas }
+      logger.info(`[Processor] Membresías procesadas. Activation URL: ${membershipResult.activationUrl || 'N/A'}`);
+      logger.info(`[Processor] Etiquetas a aplicar: ${membershipResult.etiquetas.join(', ')}`);
       completedStages.memberships = true;
 
-      // Construir array de membresías (el servicio actual no devuelve esta info, inferimos del producto)
-      memberships = [
-        { name: paymentLinkData.product, status: 'Activa' }
-      ];
-
-      // NOTIFICACIÓN PASO 4: Membresías
-      await notificationService.notifyStep(4, 'CREACIÓN DE MEMBRESÍAS (FRAPP)', {
-        'Producto': paymentLinkData.product,
-        'Email': paymentLinkData.email,
-        'Nombre': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
-        'Membresías creadas': memberships.length,
-        'Detalles': memberships.map(m => m.name).join(', '),
-        'Activation URL': activationUrl || 'N/A',
-        'Modo': 'TESTING (simulado)',
-        'Resultado': '✅ Membresías creadas exitosamente'
-      });
     } else {
       logger.info(`[Processor] Producto no requiere membresías: ${paymentLinkData.product}`);
 
-      // NOTIFICACIÓN PASO 4: Sin membresías
-      await notificationService.notifyStep(4, 'VERIFICACIÓN DE MEMBRESÍAS', {
+      // NOTIFICACIÓN PASO 3: Sin membresías
+      await notificationService.notifyStep(3, 'VERIFICACIÓN DE MEMBRESÍAS', {
         'Producto': paymentLinkData.product,
         'Requiere membresías': '❌ No',
         'Motivo': 'Cuota 2+ o producto no permitido',
@@ -189,9 +154,78 @@ async function processWebhook(webhookId) {
       });
     }
 
-    // STAGE 6: Buscar o crear cliente en World Office
+    // STAGE 4: Registrar búsqueda/creación de contacto en CRM
+    await WebhookLog.create({
+      webhook_id: webhookId,
+      stage: 'crm_upsert',
+      status: 'processing',
+      details: `Buscando o creando contacto en CRM: ${paymentLinkData.email}`
+    });
+
+    // NOTIFICACIÓN PASO 4: CRM
+    await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
+      'Email': paymentLinkData.email,
+      'Estado': '🔄 Procesando...'
+    });
+
+    // Buscar o crear contacto en ActiveCampaign
+    const crmResult = await crmService.createOrUpdateContact(paymentLinkData, webhook);
+    const contact = crmResult.contact;
+    const crmAction = crmResult.action;
+
+    logger.info(`[Processor] Contacto ${crmAction} con CRM ID: ${contact.id}`);
+
+    // Guardar en BD local (si no existe)
+    let localContact = await Contact.findOne({ where: { email: paymentLinkData.email } });
+    if (!localContact) {
+      localContact = await Contact.create({
+        crm_id: contact.id,
+        email: paymentLinkData.email,
+        name: `${paymentLinkData.givenName || ''} ${paymentLinkData.familyName || ''}`.trim(),
+        phone: paymentLinkData.phone,
+        identity_document: paymentLinkData.identityDocument
+      });
+      logger.info(`[Processor] Contacto guardado en BD local: ${localContact.id}`);
+    }
+
+    // Si hay activationUrl, actualizar en CRM
+    if (membershipResult?.activationUrl) {
+      await crmService.updateContact(contact.id, {
+        activationUrl: membershipResult.activationUrl
+      });
+      logger.info(`[Processor] ActivationUrl actualizada en CRM`);
+    }
+
+    // Si hay etiquetas, agregarlas
+    if (membershipResult?.etiquetas && membershipResult.etiquetas.length > 0) {
+      for (const tagId of membershipResult.etiquetas) {
+        try {
+          await crmService.addTagToContact(contact.id, tagId);
+          logger.info(`[Processor] Etiqueta ${tagId} agregada al contacto`);
+        } catch (error) {
+          logger.warn(`[Processor] Error agregando etiqueta ${tagId}: ${error.message}`);
+        }
+      }
+    }
+
+    completedStages.crm = true;
+
+    // NOTIFICACIÓN PASO 4 COMPLETADA: CRM
+    await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
+      'Email': paymentLinkData.email,
+      'Acción': crmAction === 'created' ? '🆕 Contacto creado' : '🔄 Contacto actualizado',
+      'CRM ID': contact.id,
+      'Nombre': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
+      'Teléfono': paymentLinkData.phone,
+      'Cédula': paymentLinkData.identityDocument,
+      'ActivationUrl': membershipResult?.activationUrl ? '✅ Actualizada' : 'N/A',
+      'Etiquetas aplicadas': membershipResult?.etiquetas ? membershipResult.etiquetas.length : 0,
+      'Resultado': '✅ Contacto gestionado exitosamente'
+    });
+
+    // STAGE 5: Buscar o crear cliente en World Office
     // Esto incluirá la búsqueda de ciudad en el caché
-    logger.info(`[Processor] PASO 6: Gestionando cliente en World Office`);
+    logger.info(`[Processor] PASO 5: Gestionando cliente en World Office`);
 
     const woCustomerResult = await worldOfficeService.findOrUpdateCustomer({
       identityDocument: paymentLinkData.identityDocument,
@@ -207,7 +241,7 @@ async function processWebhook(webhookId) {
     logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId} | Comercial WO ID: ${woCustomerResult.comercialWOId}`);
     completedStages.worldoffice_customer = true;
 
-    // NOTIFICACIÓN PASO 6: World Office
+    // NOTIFICACIÓN PASO 5: World Office
     const cityText = webhook.customer_city || 'N/A';
     const cityUsed = woCustomerResult.customerData?.cityName || 'N/A';
 
@@ -219,7 +253,7 @@ async function processWebhook(webhookId) {
       actionText = '✅ Cliente ya existe en WO';
     }
 
-    await notificationService.notifyStep(6, 'GESTIÓN CLIENTE WORLD OFFICE', {
+    await notificationService.notifyStep(5, 'GESTIÓN CLIENTE WORLD OFFICE', {
       'Cédula': paymentLinkData.identityDocument,
       'Nombre completo': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
       'Email': paymentLinkData.email,
@@ -235,6 +269,7 @@ async function processWebhook(webhookId) {
     });
 
     // Preparar mensaje final según resultado
+    const activationUrl = membershipResult?.activationUrl || null;
     const finalDetails = debeCrearMemberships && activationUrl
       ? `Completado exitosamente. Producto: ${paymentLinkData.product} | Membresías creadas | URL: ${activationUrl}`
       : `Completado. Producto: ${paymentLinkData.product} | NO requiere membresías (Cuota 2+, producto no permitido, etc.)`;
@@ -261,7 +296,7 @@ async function processWebhook(webhookId) {
       webhookRef: webhook.ref_payco,
       invoiceId,
       email: paymentLinkData.email,
-      contactCrmId: contact.crm_id,
+      contactCrmId: contact.id,
       product: paymentLinkData.product,
       amount: webhook.amount,
       activationUrl: activationUrl,

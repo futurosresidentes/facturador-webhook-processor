@@ -20,13 +20,13 @@ const CONFIGURACION_PROMOCIONES = {
           nombre: 'Simulación CES',
           membershipPlanId: 9,
           usarFechaInicio: false,
-          membershipExpiryDate: '2025-11-20T23:59:59-05:00'
+          fechaFinFija: new Date('2025-11-20T23:59:59-05:00')
         },
         {
           nombre: 'Simulación UPB',
           membershipPlanId: 10,
           usarFechaInicio: false,
-          membershipExpiryDate: '2026-04-08T23:59:59-05:00'
+          fechaFinFija: new Date('2026-04-08T23:59:59-05:00')
         }
       ],
       'Élite - 9 meses': [
@@ -40,13 +40,13 @@ const CONFIGURACION_PROMOCIONES = {
           nombre: 'Simulación CES',
           membershipPlanId: 9,
           usarFechaInicio: false,
-          membershipExpiryDate: '2025-11-20T23:59:59-05:00'
+          fechaFinFija: new Date('2025-11-20T23:59:59-05:00')
         },
         {
           nombre: 'Simulación UPB',
           membershipPlanId: 10,
           usarFechaInicio: false,
-          membershipExpiryDate: '2026-04-08T23:59:59-05:00'
+          fechaFinFija: new Date('2026-04-08T23:59:59-05:00')
         }
       ]
     }

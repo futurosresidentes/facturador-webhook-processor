@@ -1,89 +1,150 @@
+/**
+ * CRM Service V2 - Estrategia Create-First
+ * Intenta crear primero, si existe entonces actualiza
+ */
+
 const axios = require('axios');
 const config = require('../config/env');
 const logger = require('../config/logger');
-const { Contact } = require('../models');
+const { retryOperation } = require('../utils/retryHelper');
 
 /**
- * Busca un contacto en ActiveCampaign por email
- * @param {string} email - Email del contacto
- * @returns {Object|null} - Contacto encontrado o null
+ * Normaliza el teléfono agregando +57 si es necesario
+ * @param {string} telefono - Número de teléfono
+ * @returns {string} - Teléfono normalizado
  */
-async function findContactByEmail(email) {
-  const url = `${config.activeCampaign.baseUrl}/contacts?email=${encodeURIComponent(email)}`;
-  const maxRetries = config.activeCampaign.maxRetries;
-  const retryDelay = config.activeCampaign.retryDelay;
+function normalizePhone(telefono) {
+  if (!telefono) return '';
 
-  let lastError = null;
+  const cleanPhone = telefono.trim();
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      logger.info(`[CRM] Buscando contacto - Intento ${attempt}/${maxRetries}`);
-
-      const response = await axios.get(url, {
-        headers: {
-          'Api-Token': config.activeCampaign.apiToken,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        const result = response.data;
-
-        if (result.contacts && result.contacts.length > 0) {
-          logger.info(`[CRM] Contacto encontrado: ${result.contacts[0].id}`);
-          return result.contacts[0];
-        } else {
-          logger.info(`[CRM] Contacto no encontrado en CRM`);
-          return null;
-        }
-      } else {
-        throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
-      }
-
-    } catch (error) {
-      lastError = error;
-      logger.warn(`[CRM] Error buscando contacto en intento ${attempt}/${maxRetries}: ${error.message}`);
-
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
+  // Si ya tiene +57 o +, retornar tal cual
+  if (cleanPhone.startsWith('+')) {
+    return cleanPhone;
   }
 
-  throw new Error(`[CRM] Falló búsqueda después de ${maxRetries} intentos: ${lastError.message}`);
+  // Si es un número de 10 dígitos que empieza con 3 (celular colombiano)
+  if (/^3\d{9}$/.test(cleanPhone)) {
+    return '+57' + cleanPhone;
+  }
+
+  return cleanPhone;
 }
 
 /**
- * Crea un nuevo contacto en ActiveCampaign
- * @param {Object} paymentLinkData - Datos del payment link
- * @returns {Object} - Contacto creado
+ * Intenta crear un contacto en ActiveCampaign
+ * @param {Object} data - Datos del contacto
+ * @param {string} data.correo - Email
+ * @param {string} data.nombres - Nombre
+ * @param {string} data.apellidos - Apellido
+ * @param {string} data.telefono - Teléfono
+ * @param {string} data.cedula - Cédula
+ * @param {string} data.ciudad - Ciudad (opcional, puede ser null)
+ * @param {string} data.direccion - Dirección (opcional, puede ser null)
+ * @returns {Promise<Object>} - Contacto creado o información de duplicado
  */
-async function createContact(paymentLinkData) {
+async function createContact(data) {
   const url = `${config.activeCampaign.baseUrl}/contacts`;
 
-  const contactData = {
-    contact: {
-      email: paymentLinkData.email,
-      firstName: paymentLinkData.givenName || '',
-      lastName: paymentLinkData.familyName || '',
-      phone: paymentLinkData.phone || '',
-      fieldValues: []
+  const operation = async () => {
+    const fieldValues = [];
+
+    // Campo 2: Cédula (siempre presente)
+    if (data.cedula) {
+      fieldValues.push({
+        field: '2',
+        value: data.cedula
+      });
     }
-  };
 
-  // Agregar campo personalizado para documento de identidad si existe
-  if (paymentLinkData.identityDocument) {
-    contactData.contact.fieldValues.push({
-      field: '1', // ID del campo personalizado (ajustar según tu AC)
-      value: paymentLinkData.identityDocument
-    });
-  }
+    // Campo 5: Ciudad (solo si no es null)
+    if (data.ciudad) {
+      fieldValues.push({
+        field: '5',
+        value: data.ciudad
+      });
+    }
 
-  try {
-    logger.info(`[CRM] Creando nuevo contacto: ${paymentLinkData.email}`);
+    // Campo 6: Dirección (solo si no es null)
+    if (data.direccion) {
+      fieldValues.push({
+        field: '6',
+        value: data.direccion
+      });
+    }
+
+    const contactData = {
+      contact: {
+        email: data.correo,
+        firstName: data.nombres || '',
+        lastName: data.apellidos || '',
+        phone: normalizePhone(data.telefono),
+        fieldValues
+      }
+    };
+
+    logger.info(`[CRM] Intentando crear contacto: ${data.correo}`);
 
     const response = await axios.post(url, contactData, {
+      headers: {
+        'Api-Token': config.activeCampaign.apiToken,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000,
+      validateStatus: (status) => status < 500 // No lanzar error en 4xx
+    });
+
+    // Si fue creado exitosamente
+    if (response.status >= 200 && response.status < 300) {
+      logger.info(`[CRM] Contacto creado exitosamente: ${response.data.contact.id}`);
+      return {
+        created: true,
+        contact: response.data.contact
+      };
+    }
+
+    // Si es un error de duplicado
+    if (response.status === 422 || response.status === 400) {
+      const errors = response.data.errors || [];
+      const isDuplicate = errors.some(err =>
+        err.code === 'duplicate' ||
+        err.title?.toLowerCase().includes('correo') ||
+        err.title?.toLowerCase().includes('email')
+      );
+
+      if (isDuplicate) {
+        logger.info(`[CRM] Contacto duplicado detectado: ${data.correo}`);
+        return {
+          created: false,
+          duplicate: true,
+          email: data.correo
+        };
+      }
+    }
+
+    // Cualquier otro error
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+  };
+
+  return await retryOperation(operation, {
+    maxRetries: 5,
+    delayMs: 1000,
+    operationName: `CRM Create Contact (${data.correo})`
+  });
+}
+
+/**
+ * Busca un contacto por email
+ * @param {string} email - Email del contacto
+ * @returns {Promise<Object|null>} - Contacto encontrado o null
+ */
+async function findContactByEmail(email) {
+  const url = `${config.activeCampaign.baseUrl}/contacts?email=${encodeURIComponent(email)}`;
+
+  const operation = async () => {
+    logger.info(`[CRM] Buscando contacto por email: ${email}`);
+
+    const response = await axios.get(url, {
       headers: {
         'Api-Token': config.activeCampaign.apiToken,
         'Content-Type': 'application/json'
@@ -92,69 +153,226 @@ async function createContact(paymentLinkData) {
     });
 
     if (response.status >= 200 && response.status < 300) {
-      logger.info(`[CRM] Contacto creado exitosamente: ${response.data.contact.id}`);
-      return response.data.contact;
-    } else {
-      throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+      const result = response.data;
+
+      if (result.contacts && result.contacts.length > 0) {
+        logger.info(`[CRM] Contacto encontrado: ${result.contacts[0].id}`);
+        return result.contacts[0];
+      } else {
+        logger.info(`[CRM] Contacto no encontrado`);
+        return null;
+      }
     }
 
-  } catch (error) {
-    logger.error(`[CRM] Error creando contacto:`, error);
-    throw new Error(`[CRM] Error creando contacto: ${error.message}`);
-  }
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+  };
+
+  return await retryOperation(operation, {
+    maxRetries: 5,
+    delayMs: 1000,
+    operationName: `CRM Find Contact (${email})`
+  });
 }
 
 /**
- * Busca o crea un contacto en el CRM y en la base de datos local
- * @param {Object} paymentLinkData - Datos del payment link de FR360
- * @returns {Object} - Contacto con CRM ID
+ * Actualiza un contacto existente
+ * @param {string} contactId - ID del contacto en ActiveCampaign
+ * @param {Object} data - Datos a actualizar
+ * @returns {Promise<Object>} - Contacto actualizado
  */
-async function findOrCreateContact(paymentLinkData) {
-  const email = paymentLinkData.email;
+async function updateContact(contactId, data) {
+  const url = `${config.activeCampaign.baseUrl}/contacts/${contactId}`;
 
-  if (!email) {
-    throw new Error('[CRM] El email es requerido');
-  }
+  const operation = async () => {
+    const fieldValues = [];
 
-  try {
-    // 1. Buscar en base de datos local primero
-    let localContact = await Contact.findOne({ where: { email } });
-
-    if (localContact) {
-      logger.info(`[CRM] Contacto encontrado en BD local: ${localContact.crm_id}`);
-      return localContact;
+    // Campo 2: Cédula
+    if (data.cedula) {
+      fieldValues.push({
+        field: '2',
+        value: data.cedula
+      });
     }
 
-    // 2. Buscar en ActiveCampaign
-    let crmContact = await findContactByEmail(email);
-
-    // 3. Si no existe, crear en ActiveCampaign
-    if (!crmContact) {
-      logger.info(`[CRM] Contacto no existe, creando nuevo...`);
-      crmContact = await createContact(paymentLinkData);
+    // Campo 5: Ciudad (solo si no es null)
+    if (data.ciudad) {
+      fieldValues.push({
+        field: '5',
+        value: data.ciudad
+      });
     }
 
-    // 4. Guardar en base de datos local
-    localContact = await Contact.create({
-      crm_id: crmContact.id,
-      email: email,
-      name: `${paymentLinkData.givenName || ''} ${paymentLinkData.familyName || ''}`.trim(),
-      phone: paymentLinkData.phone,
-      identity_document: paymentLinkData.identityDocument
+    // Campo 6: Dirección (solo si no es null)
+    if (data.direccion) {
+      fieldValues.push({
+        field: '6',
+        value: data.direccion
+      });
+    }
+
+    // Campo 303: Activation URL (solo si existe)
+    if (data.activationUrl) {
+      fieldValues.push({
+        field: '303',
+        value: data.activationUrl
+      });
+    }
+
+    const contactData = {
+      contact: {
+        fieldValues
+      }
+    };
+
+    // Solo incluir nombres/apellidos/teléfono si están presentes
+    if (data.nombres !== undefined) {
+      contactData.contact.firstName = data.nombres || '';
+    }
+    if (data.apellidos !== undefined) {
+      contactData.contact.lastName = data.apellidos || '';
+    }
+    if (data.telefono !== undefined) {
+      contactData.contact.phone = normalizePhone(data.telefono);
+    }
+
+    logger.info(`[CRM] Actualizando contacto ${contactId}`);
+
+    const response = await axios.put(url, contactData, {
+      headers: {
+        'Api-Token': config.activeCampaign.apiToken,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000
     });
 
-    logger.info(`[CRM] Contacto guardado en BD local: ${localContact.id}`);
+    if (response.status >= 200 && response.status < 300) {
+      logger.info(`[CRM] Contacto actualizado exitosamente: ${contactId}`);
+      return response.data.contact;
+    }
 
-    return localContact;
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+  };
 
-  } catch (error) {
-    logger.error(`[CRM] Error en findOrCreateContact:`, error);
-    throw error;
+  return await retryOperation(operation, {
+    maxRetries: 5,
+    delayMs: 1000,
+    operationName: `CRM Update Contact (${contactId})`
+  });
+}
+
+/**
+ * Estrategia Create-First: Intenta crear, si falla por duplicado entonces actualiza
+ * @param {Object} paymentData - Datos del payment link de FR360
+ * @param {Object} webhookData - Datos del webhook de ePayco (ciudad, dirección)
+ * @returns {Promise<Object>} - Contacto final (creado o actualizado)
+ */
+async function createOrUpdateContact(paymentData, webhookData) {
+  const data = {
+    correo: paymentData.email || paymentData.correo,
+    nombres: paymentData.givenName || paymentData.nombres,
+    apellidos: paymentData.familyName || paymentData.apellidos,
+    telefono: paymentData.phone || paymentData.telefono,
+    cedula: paymentData.identityDocument || paymentData.cedula,
+    ciudad: webhookData.customer_city, // puede ser null
+    direccion: webhookData.customer_address // puede ser null
+  };
+
+  logger.info(`[CRM] Iniciando create-or-update para: ${data.correo}`);
+
+  // 1. Intentar crear primero
+  const createResult = await createContact(data);
+
+  // Si se creó exitosamente, retornar
+  if (createResult.created) {
+    return {
+      action: 'created',
+      contact: createResult.contact
+    };
   }
+
+  // 2. Si es duplicado, buscar y actualizar
+  if (createResult.duplicate) {
+    logger.info(`[CRM] Contacto duplicado, buscando para actualizar...`);
+
+    const existingContact = await findContactByEmail(data.correo);
+
+    if (!existingContact) {
+      throw new Error(`[CRM] Contacto reportado como duplicado pero no encontrado: ${data.correo}`);
+    }
+
+    // Actualizar el contacto existente
+    const updatedContact = await updateContact(existingContact.id, data);
+
+    return {
+      action: 'updated',
+      contact: updatedContact
+    };
+  }
+
+  throw new Error(`[CRM] Resultado inesperado en createOrUpdateContact`);
+}
+
+/**
+ * Agrega una etiqueta a un contacto
+ * @param {string} contactId - ID del contacto en ActiveCampaign
+ * @param {number} tagId - ID de la etiqueta
+ * @returns {Promise<Object>} - Resultado de la operación
+ */
+async function addTagToContact(contactId, tagId) {
+  const url = `${config.activeCampaign.baseUrl}/contactTags`;
+
+  const operation = async () => {
+    logger.info(`[CRM] Agregando etiqueta ${tagId} al contacto ${contactId}`);
+
+    const payload = {
+      contactTag: {
+        contact: contactId,
+        tag: tagId
+      }
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        'Api-Token': config.activeCampaign.apiToken,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000,
+      validateStatus: (status) => status < 500 // No lanzar error en 4xx
+    });
+
+    // Éxito (201 Created)
+    if (response.status === 201) {
+      logger.info(`[CRM] Etiqueta ${tagId} agregada exitosamente`);
+      return {
+        success: true,
+        contactTag: response.data.contactTag
+      };
+    }
+
+    // Si ya existe la etiqueta (puede retornar error de duplicado)
+    if (response.status === 422 || response.status === 400) {
+      logger.info(`[CRM] Etiqueta ${tagId} ya existía en el contacto ${contactId}`);
+      return {
+        success: true,
+        alreadyExists: true
+      };
+    }
+
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+  };
+
+  return await retryOperation(operation, {
+    maxRetries: 3,
+    delayMs: 1000,
+    operationName: `CRM Add Tag ${tagId} to Contact ${contactId}`
+  });
 }
 
 module.exports = {
-  findContactByEmail,
   createContact,
-  findOrCreateContact
+  findContactByEmail,
+  updateContact,
+  createOrUpdateContact,
+  addTagToContact,
+  normalizePhone
 };
