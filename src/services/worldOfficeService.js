@@ -10,6 +10,7 @@
 const axios = require('axios');
 const config = require('../config/env');
 const logger = require('../config/logger');
+const cityCache = require('./worldOfficeCityCache');
 
 // Configuración de axios para World Office
 const woClient = axios.create({
@@ -29,11 +30,25 @@ const woClient = axios.create({
  * @param {string} customerData.familyName - Apellido
  * @param {string} customerData.email - Email
  * @param {string} customerData.phone - Teléfono
+ * @param {string} customerData.city - Nombre de la ciudad (opcional)
+ * @param {string} customerData.address - Dirección (opcional)
  * @returns {Promise<Object>} customerId y customerData
  */
 async function findOrUpdateCustomer(customerData) {
   try {
     logger.info(`[WorldOffice] Buscando cliente con cédula: ${customerData.identityDocument}`);
+
+    // Intentar obtener el ID de la ciudad si viene en los datos
+    let cityId = null;
+    if (customerData.city) {
+      const cityFound = await cityCache.findCityByName(customerData.city);
+      if (cityFound) {
+        cityId = cityFound.id;
+        logger.info(`[WorldOffice] Ciudad encontrada: "${customerData.city}" → ID ${cityId}`);
+      } else {
+        logger.warn(`[WorldOffice] Ciudad no encontrada en caché: "${customerData.city}"`);
+      }
+    }
 
     // TODO: Implementar búsqueda de cliente
     // const searchResponse = await woClient.get(`/customers/search`, {
@@ -70,10 +85,25 @@ async function findOrUpdateCustomer(customerData) {
         document: customerData.identityDocument,
         name: `${customerData.givenName} ${customerData.familyName}`,
         email: customerData.email,
-        phone: customerData.phone
+        phone: customerData.phone,
+        cityId: cityId,
+        cityName: customerData.city,
+        address: customerData.address
       },
       action: 'created_mock'
     };
+
+    // Cuando implementes la API real, usa esto:
+    // const payload = {
+    //   document: customerData.identityDocument,
+    //   name: customerData.givenName,
+    //   lastName: customerData.familyName,
+    //   email: customerData.email,
+    //   phone: customerData.phone,
+    //   cityId: cityId, // ID obtenido del caché
+    //   address: customerData.address
+    // };
+    // const createResponse = await woClient.post('/customers', payload);
 
   } catch (error) {
     logger.error('[WorldOffice] Error en findOrUpdateCustomer:', error);
@@ -194,5 +224,12 @@ module.exports = {
   findOrUpdateCustomer,
   createInvoice,
   accountInvoice,
-  emitDianInvoice
+  emitDianInvoice,
+  // Exportar funciones del caché de ciudades para uso directo
+  cityCache: {
+    findCityByName: cityCache.findCityByName,
+    findCityById: cityCache.findCityById,
+    getCacheInfo: cityCache.getCacheInfo,
+    refreshCache: cityCache.refreshCache
+  }
 };
