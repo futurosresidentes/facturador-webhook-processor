@@ -78,36 +78,43 @@ async function notifySuccess(data) {
       messageParts.push(`✓ 2. Consulta FR360: Exitosa`);
     }
 
-    if (data.stages.crm) {
-      const action = data.crmAction === 'created' ? 'Creado' : 'Actualizado';
-      messageParts.push(`✓ 3. CRM (ActiveCampaign): ${action} - ID ${data.contactCrmId}`);
-    }
-
     if (data.stages.memberships && data.memberships) {
-      messageParts.push(`✓ 4. Membresías (Frapp): ${data.memberships.length} creada(s)`);
+      messageParts.push(`✓ 3. Membresías (Frapp): ${data.memberships.length} creada(s)`);
       data.memberships.forEach((membership, idx) => {
         messageParts.push(`  - ${membership.name || `Membresía ${idx + 1}`}: ${membership.status || 'Activa'}`);
       });
     }
 
-    if (data.stages.callbell) {
-      messageParts.push(`✓ 5. Notificación Callbell: Enviada`);
+    if (data.stages.crm) {
+      const action = data.crmAction === 'created' ? 'Creado' : 'Actualizado';
+      messageParts.push(`✓ 4. CRM (ActiveCampaign): ${action} - ID ${data.contactCrmId}`);
     }
 
     if (data.stages.worldoffice_customer) {
-      messageParts.push(`✓ 6. World Office - Cliente: ${data.worldOfficeCustomerId || 'Creado/Actualizado'}`);
+      messageParts.push(`✓ 5. World Office - Cliente: ${data.worldOfficeCustomerId || 'Creado/Actualizado'}`);
     }
 
     if (data.stages.worldoffice_invoice) {
-      messageParts.push(`✓ 7. World Office - Factura: ${data.invoiceNumber || 'Creada'}`);
+      messageParts.push(`✓ 6. World Office - Factura: ${data.invoice?.numeroFactura || 'Creada'}`);
     }
 
     if (data.stages.worldoffice_accounting) {
-      messageParts.push(`✓ 8. World Office - Contabilización: Exitosa`);
+      messageParts.push(`✓ 7. World Office - Contabilización: ${data.invoice?.contabilizado ? 'Exitosa' : 'Procesada'}`);
     }
 
     if (data.stages.worldoffice_dian) {
-      messageParts.push(`✓ 9. World Office - Emisión DIAN: ${data.cufe || 'Emitida'}`);
+      const dianInfo = data.invoice?.dian;
+      if (dianInfo?.skipped) {
+        messageParts.push(`✓ 8. World Office - Emisión DIAN: Desactivada`);
+      } else if (dianInfo?.warning) {
+        messageParts.push(`⚠️ 8. World Office - Emisión DIAN: Ya emitida previamente`);
+      } else {
+        messageParts.push(`✓ 8. World Office - Emisión DIAN: ${dianInfo?.cufe || 'Emitida'}`);
+      }
+    }
+
+    if (data.stages.callbell) {
+      messageParts.push(`✓ 9. Notificación Callbell: Enviada`);
     }
 
     if (data.stages.strapi) {
@@ -116,6 +123,37 @@ async function notifySuccess(data) {
   }
 
   messageParts.push('');
+
+  // Invoice details section (if invoice was created)
+  if (data.invoice) {
+    messageParts.push('*📄 FACTURACIÓN*');
+    messageParts.push(`• Número de factura: ${data.invoice.numeroFactura}`);
+    messageParts.push(`• Documento ID: ${data.invoice.documentoId}`);
+    messageParts.push(`• Monto: $${data.invoice.monto?.toLocaleString('es-CO') || 'N/A'} COP`);
+
+    const modoFactura = data.invoice.simulado ? '🟡 TESTING (simulada)' : '🟢 PRODUCCIÓN (real)';
+    messageParts.push(`• Modo: ${modoFactura}`);
+
+    messageParts.push(`• Contabilizada: ${data.invoice.contabilizado ? '✅ Sí' : '❌ No'}`);
+
+    if (data.invoice.dian) {
+      if (data.invoice.dian.skipped) {
+        messageParts.push(`• Emisión DIAN: 🔴 Desactivada por configuración`);
+      } else if (data.invoice.dian.warning) {
+        messageParts.push(`• Emisión DIAN: ⚠️ Ya emitida previamente`);
+        if (data.invoice.dian.cufe && data.invoice.dian.cufe !== 'N/A') {
+          messageParts.push(`• CUFE: ${data.invoice.dian.cufe}`);
+        }
+      } else {
+        messageParts.push(`• Emisión DIAN: ✅ ${data.invoice.dian.status || 'Emitida'}`);
+        if (data.invoice.dian.cufe && data.invoice.dian.cufe !== 'N/A') {
+          messageParts.push(`• CUFE: ${data.invoice.dian.cufe}`);
+        }
+      }
+    }
+
+    messageParts.push('');
+  }
 
   // Activation URL section
   if (data.activationUrl) {

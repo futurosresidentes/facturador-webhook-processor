@@ -299,11 +299,191 @@ async function processWebhook(webhookId) {
       'Resultado': '✅ Cliente gestionado exitosamente'
     }, paso5Duration);
 
+    // STAGE 6: FACTURACIÓN EN WORLD OFFICE (Crear + Contabilizar + Emitir DIAN)
+    logger.info(`[Processor] PASO 6: Facturando en World Office`);
+
+    let invoiceResult = null;
+    let accountingResult = null;
+    let dianResult = null;
+
+    // PASO 6A: Crear factura
+    stepTimestamps.paso6a = Date.now();
+
+    try {
+      invoiceResult = await worldOfficeService.createInvoice({
+        customerId: woCustomerResult.customerId,
+        comercialWOId: woCustomerResult.comercialWOId,
+        product: paymentLinkData.product,
+        amount: parseFloat(webhook.amount)
+      });
+
+      completedStages.worldoffice_invoice = true;
+      logger.info(`[Processor] Factura creada - Documento ID: ${invoiceResult.documentoId}`);
+
+      // Preparar información de los renglones para la notificación
+      let renglonesDetalle = '';
+      if (invoiceResult.renglones && invoiceResult.renglones.length > 0) {
+        renglonesDetalle = invoiceResult.renglones.map((renglon, idx) => {
+          const numero = idx + 1;
+          const inventarioInfo = renglon.idInventario === 1010 ? 'FR Libros' :
+                                 renglon.idInventario === 1001 ? 'MIR' :
+                                 renglon.idInventario === 1054 ? 'Simulación' :
+                                 renglon.idInventario === 1004 ? 'Iaura' :
+                                 renglon.idInventario === 1008 ? 'Sculapp' :
+                                 renglon.idInventario === 1003 ? 'Asesoría' :
+                                 renglon.idInventario === 1062 ? 'Publicidad' :
+                                 renglon.idInventario === 1057 ? 'Acceso VIP' :
+                                 renglon.idInventario === 1059 ? 'Inglés' :
+                                 renglon.idInventario === 1067 ? 'VIP - Rmastery' :
+                                 `ID ${renglon.idInventario}`;
+
+          const valorUnitario = renglon.valorUnitario || renglon.valorTotal || 0;
+          const iva = renglon.iva || (valorUnitario * 0.19);
+          const totalConIva = valorUnitario + iva;
+
+          let detalle = `${numero}️⃣ Producto: ${inventarioInfo} (ID: ${renglon.idInventario})\n`;
+          detalle += `   • Cantidad: ${renglon.cantidad || 1} und\n`;
+          detalle += `   • Valor unitario: $${valorUnitario.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (sin IVA)\n`;
+          detalle += `   • Valor total: $${valorUnitario.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}\n`;
+
+          if (iva > 0) {
+            detalle += `   • IVA (19%): $${iva.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}\n`;
+            detalle += `   • Total con IVA: $${totalConIva.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}\n`;
+          } else {
+            detalle += `   • IVA: $0.00 (exento)\n`;
+            detalle += `   • Total: $${valorUnitario.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}\n`;
+          }
+
+          detalle += `   • Centro de costo: ${renglon.idCentroCosto || 1}\n`;
+          detalle += `   • Bodega: ${renglon.idBodega || 1}`;
+
+          if (renglon.concepto) {
+            detalle += `\n   • ${renglon.concepto}`;
+          }
+
+          return detalle;
+        }).join('\n\n');
+      }
+
+      // Calcular totales
+      const subtotal = invoiceResult.renglones?.reduce((sum, r) => sum + (r.valorUnitario || r.valorTotal || 0), 0) || 0;
+      const ivaTotal = invoiceResult.renglones?.reduce((sum, r) => sum + (r.iva || 0), 0) || 0;
+      const totalFactura = parseFloat(webhook.amount);
+
+      const paso6aDuration = Date.now() - stepTimestamps.paso6a;
+
+      // Determinar el modo para la notificación
+      const modoFactura = invoiceResult.simulado ? '🟡 MODO TESTING - Factura simulada' : '🟢 MODO PRODUCCIÓN - Factura real creada';
+
+      await notificationService.notifyStep(6, 'CREACIÓN DE FACTURA (WORLD OFFICE)', {
+        '📋 DATOS GENERALES': '',
+        'Fecha': new Date().toISOString().split('T')[0],
+        'Prefijo': '16',
+        'Tipo': 'FV (Factura de Venta)',
+        'Cliente ID WO': woCustomerResult.customerId,
+        'Comercial ID WO': woCustomerResult.comercialWOId,
+        'Forma de pago': '1001',
+        'Concepto': paymentLinkData.product,
+        '': '',
+        '💰 PRODUCTOS FACTURADOS': renglonesDetalle ? `\n${renglonesDetalle}` : 'No disponible',
+        ' ': '',
+        '📊 RESUMEN FINANCIERO': '',
+        'Subtotal (sin IVA)': `$${subtotal.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        'IVA total': `$${ivaTotal.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        'Total factura': `$${totalFactura.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        '  ': '',
+        'Modo': modoFactura,
+        'Documento ID': invoiceResult.documentoId,
+        'Número factura': invoiceResult.numeroFactura,
+        'Resultado': '✅ Factura creada exitosamente'
+      }, paso6aDuration);
+
+    } catch (error) {
+      logger.error(`[Processor] Error creando factura: ${error.message}`);
+      throw error;
+    }
+
+    // PASO 6B: Contabilizar factura
+    stepTimestamps.paso6b = Date.now();
+
+    try {
+      accountingResult = await worldOfficeService.accountInvoice(invoiceResult.documentoId);
+      completedStages.worldoffice_accounting = true;
+      logger.info(`[Processor] Factura contabilizada - Status: ${accountingResult.status}`);
+
+      const paso6bDuration = Date.now() - stepTimestamps.paso6b;
+      const modoContabilizacion = accountingResult.simulado ? '🟡 MODO TESTING - Contabilización simulada' : '🟢 MODO PRODUCCIÓN - Contabilización real';
+
+      await notificationService.notifyStep(7, 'CONTABILIZACIÓN DE FACTURA (WORLD OFFICE)', {
+        'Documento ID': invoiceResult.documentoId,
+        'Número factura': invoiceResult.numeroFactura,
+        'Status': accountingResult.status,
+        'Fecha contabilización': accountingResult.accountingDate,
+        'Modo': modoContabilizacion,
+        'Resultado': '✅ Factura contabilizada exitosamente'
+      }, paso6bDuration);
+
+    } catch (error) {
+      logger.error(`[Processor] Error contabilizando factura: ${error.message}`);
+      throw error;
+    }
+
+    // PASO 6C: Emitir ante DIAN
+    stepTimestamps.paso6c = Date.now();
+
+    try {
+      dianResult = await worldOfficeService.emitDianInvoice(invoiceResult.documentoId);
+
+      if (dianResult.skipped) {
+        logger.info(`[Processor] Emisión DIAN omitida (desactivada en configuración)`);
+      } else if (dianResult.warning) {
+        logger.warn(`[Processor] Factura ya emitida previamente (409)`);
+        completedStages.worldoffice_dian = true;
+      } else {
+        logger.info(`[Processor] Factura emitida ante DIAN - CUFE: ${dianResult.cufe}`);
+        completedStages.worldoffice_dian = true;
+      }
+
+      const paso6cDuration = Date.now() - stepTimestamps.paso6c;
+
+      let statusDian = '';
+      let modoDian = '';
+
+      if (dianResult.skipped) {
+        statusDian = '⚠️ Emisión DIAN desactivada';
+        modoDian = '🔴 WORLDOFFICE_EMITIR_DIAN=false';
+      } else if (dianResult.warning) {
+        statusDian = '⚠️ Factura ya emitida previamente';
+        modoDian = '🟠 Error 409 - Continuando proceso';
+      } else if (dianResult.simulado) {
+        statusDian = '✅ Emisión simulada exitosamente';
+        modoDian = '🟡 MODO TESTING - Emisión DIAN simulada';
+      } else {
+        statusDian = '✅ Emitida exitosamente ante DIAN';
+        modoDian = '🟢 MODO PRODUCCIÓN - Emisión DIAN real';
+      }
+
+      await notificationService.notifyStep(8, 'EMISIÓN FACTURA ELECTRÓNICA (DIAN)', {
+        'Documento ID': invoiceResult.documentoId,
+        'Número factura': invoiceResult.numeroFactura,
+        'CUFE': dianResult.cufe || 'N/A',
+        'Status DIAN': dianResult.dianStatus,
+        'Fecha emisión': dianResult.emittedAt || 'N/A',
+        'Modo': modoDian,
+        'Resultado': statusDian
+      }, paso6cDuration);
+
+    } catch (error) {
+      logger.error(`[Processor] Error emitiendo factura ante DIAN: ${error.message}`);
+      // No lanzar error, continuar proceso (emisión DIAN no es crítica)
+      logger.warn(`[Processor] Continuando proceso sin emisión DIAN`);
+    }
+
     // Preparar mensaje final según resultado
     const activationUrl = membershipResult?.activationUrl || null;
     const finalDetails = debeCrearMemberships && activationUrl
-      ? `Completado exitosamente. Producto: ${paymentLinkData.product} | Membresías creadas | URL: ${activationUrl}`
-      : `Completado. Producto: ${paymentLinkData.product} | NO requiere membresías (Cuota 2+, producto no permitido, etc.)`;
+      ? `Completado exitosamente. Producto: ${paymentLinkData.product} | Membresías creadas | URL: ${activationUrl} | Factura: ${invoiceResult.numeroFactura}`
+      : `Completado. Producto: ${paymentLinkData.product} | NO requiere membresías | Factura: ${invoiceResult.numeroFactura}`;
 
     // Registrar finalización exitosa
     await WebhookLog.create({
@@ -356,6 +536,21 @@ async function processWebhook(webhookId) {
 
       // World Office
       worldOfficeCustomerId: woCustomerResult.customerId,
+
+      // Facturación (si se creó factura)
+      invoice: invoiceResult ? {
+        numeroFactura: invoiceResult.numeroFactura,
+        documentoId: invoiceResult.documentoId,
+        monto: invoiceResult.monto,
+        simulado: invoiceResult.simulado,
+        contabilizado: accountingResult ? accountingResult.status === 'OK' : false,
+        dian: dianResult ? {
+          status: dianResult.dianStatus,
+          cufe: dianResult.cufe || 'N/A',
+          skipped: dianResult.skipped || false,
+          warning: dianResult.warning || false
+        } : undefined
+      } : undefined,
 
       // Métricas de performance
       totalRetries: totalRetries,
