@@ -3,7 +3,8 @@
  */
 const PRODUCTOS_PERMITIDOS = [
   'Élite - 6 meses',
-  'Élite - 9 meses'
+  'Élite - 9 meses',
+  'Curso Intensivo UDEA 2026'
 ];
 
 /**

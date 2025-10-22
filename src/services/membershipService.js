@@ -111,12 +111,13 @@ async function createMemberships(params) {
 
       logger.info(`[Membership] Start: ${membershipStartDate} | Duration: ${membershipDurationDays} días | Expiry: ${membershipExpiryDate}`);
     } else {
-      // Usar fecha de hoy como inicio y fecha fija como fin
-      membershipStartDate = formatForFR360(new Date());
+      // Usar fechas fijas (inicio y fin)
+      // Si hay fechaInicioFija, usarla; si no, usar fecha de hoy
+      const fechaInicio = configMembership.fechaInicioFija ? configMembership.fechaInicioFija : new Date();
+      membershipStartDate = formatForFR360(fechaInicio);
       membershipExpiryDate = formatForFR360(configMembership.fechaFinFija);
 
       const fechaFin = configMembership.fechaFinFija;
-      const fechaInicio = new Date(membershipStartDate);
       membershipDurationDays = Math.ceil((fechaFin - fechaInicio) / (1000 * 60 * 60 * 24));
 
       logger.info(`[Membership] Start: ${membershipStartDate} | Fecha fin fija: ${membershipExpiryDate} | Duration calculada: ${membershipDurationDays} días`);

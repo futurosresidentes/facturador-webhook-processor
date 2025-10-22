@@ -83,6 +83,15 @@ const CONFIGURACION_ESTANDAR = {
       usarFechaInicio: true,
       membershipDurationDays: 288
     }
+  ],
+  'Curso Intensivo UDEA 2026': [
+    {
+      nombre: 'Curso Intensivo UDEA 2026',
+      membershipPlanId: 8,
+      usarFechaInicio: false,
+      fechaInicioFija: new Date('2025-11-01T00:00:00-05:00'),
+      fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
+    }
   ]
 };
 
