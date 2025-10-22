@@ -12,11 +12,12 @@ router.post('/', validateWebhook, webhookController.receiveWebhook);
 
 /**
  * GET /api/webhooks/recent
- * Lista webhooks recientes con sus logs (sin autenticación)
+ * Lista webhooks recientes con sus logs
  * Query params: ?limit=10 (opcional, default: todos)
  * Retorna webhooks ordenados por fecha (más recientes primero) con logs agrupados
+ * Requiere: Authorization: Bearer <token>
  */
-router.get('/recent', webhookController.getRecentWebhooks);
+router.get('/recent', authenticate, webhookController.getRecentWebhooks);
 
 /**
  * GET /api/webhooks/stats

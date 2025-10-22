@@ -533,7 +533,7 @@ async function updateWebhookStatus(req, res) {
 /**
  * Lista los webhooks más recientes con sus logs
  * Query params: ?limit=10 (default: todos)
- * NO requiere autenticación (lectura pública)
+ * Requiere: Authorization: Bearer <token>
  */
 async function getRecentWebhooks(req, res) {
   try {
@@ -582,6 +582,9 @@ async function getRecentWebhooks(req, res) {
     const formattedWebhooks = webhooks.map(webhook => {
       const webhookData = webhook.toJSON();
 
+      // Asegurar que logs existe (puede ser undefined si no hay logs)
+      const logs = webhookData.logs || [];
+
       // Agrupar logs por estado
       const logsByStatus = {
         success: [],
@@ -589,7 +592,7 @@ async function getRecentWebhooks(req, res) {
         info: []
       };
 
-      webhookData.logs.forEach(log => {
+      logs.forEach(log => {
         if (logsByStatus[log.status]) {
           logsByStatus[log.status].push({
             stage: log.stage,
@@ -618,13 +621,13 @@ async function getRecentWebhooks(req, res) {
         created_at: webhookData.created_at,
         updated_at: webhookData.updated_at,
         logs: {
-          total: webhookData.logs.length,
+          total: logs.length,
           by_status: {
             success: logsByStatus.success,
             error: logsByStatus.error,
             info: logsByStatus.info
           },
-          all: webhookData.logs
+          all: logs
         }
       };
     });
