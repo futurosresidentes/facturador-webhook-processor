@@ -7,6 +7,7 @@ const logger = require('./config/logger');
 const { testConnection, syncDatabase } = require('./config/database');
 const webhookRoutes = require('./routes/webhooks');
 const featureFlagsRoutes = require('./routes/featureFlags');
+const migrationRoutes = require('./routes/migrations');
 const errorHandler = require('./middleware/errorHandler');
 
 require('./models');
@@ -40,13 +41,15 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/health',
       webhooks: '/api/webhooks',
-      featureFlags: '/api/feature-flags'
+      featureFlags: '/api/feature-flags',
+      migrations: '/api/migrations'
     }
   });
 });
 
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/feature-flags', featureFlagsRoutes);
+app.use('/api/migrations', migrationRoutes);
 
 // Endpoint temporal para ejecutar migración (REMOVER DESPUÉS)
 app.post('/api/setup', async (req, res) => {
