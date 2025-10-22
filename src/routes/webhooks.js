@@ -86,6 +86,14 @@ router.post('/:id/clean-logs', authenticate, webhookController.cleanDuplicateLog
 router.delete('/logs/all', authenticate, webhookController.deleteAllLogs);
 
 /**
+ * DELETE /api/webhooks/keep-last
+ * ⚠️ PELIGROSO: Borra TODOS los webhooks excepto el último completado exitosamente
+ * Requiere: Authorization: Bearer <token> + ?confirmation=yes
+ * Mantiene solo el webhook más reciente con status="completed"
+ */
+router.delete('/keep-last', authenticate, webhookController.keepOnlyLastSuccessful);
+
+/**
  * PATCH /api/webhooks/:id/status
  * Actualiza manualmente el estado de un webhook
  * Body: { status, current_stage, last_completed_stage }

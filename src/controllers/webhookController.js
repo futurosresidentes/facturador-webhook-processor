@@ -288,6 +288,106 @@ async function deleteAllLogs(req, res) {
 }
 
 /**
+ * Borra todos los webhooks EXCEPTO el último exitoso
+ * Mantiene solo el webhook más reciente con status="completed"
+ * ADVERTENCIA: Esta operación NO se puede deshacer
+ */
+async function keepOnlyLastSuccessful(req, res) {
+  try {
+    logger.warn(`[Controller] ⚠️ SOLICITANDO MANTENER SOLO ÚLTIMO WEBHOOK EXITOSO`);
+
+    // Encontrar el último webhook exitoso
+    const lastSuccessful = await Webhook.findOne({
+      where: { status: 'completed' },
+      order: [['created_at', 'DESC']]
+    });
+
+    if (!lastSuccessful) {
+      return res.status(404).json({
+        success: false,
+        error: 'No se encontró ningún webhook completado exitosamente'
+      });
+    }
+
+    // Contar webhooks que serán borrados
+    const totalWebhooks = await Webhook.count();
+    const webhooksToDelete = totalWebhooks - 1;
+
+    if (webhooksToDelete === 0) {
+      return res.json({
+        success: true,
+        message: 'Solo hay 1 webhook en la base de datos',
+        kept: {
+          id: lastSuccessful.id,
+          ref_payco: lastSuccessful.ref_payco,
+          product: lastSuccessful.product,
+          status: lastSuccessful.status
+        }
+      });
+    }
+
+    // Confirmar que realmente quiere borrar (requiere query param confirmation=yes)
+    if (req.query.confirmation !== 'yes') {
+      return res.status(400).json({
+        success: false,
+        error: 'Para borrar webhooks, debe incluir ?confirmation=yes',
+        warning: `Se borrarán ${webhooksToDelete} webhooks`,
+        kept_webhook: {
+          id: lastSuccessful.id,
+          ref_payco: lastSuccessful.ref_payco,
+          invoice_id: lastSuccessful.invoice_id,
+          product: lastSuccessful.product,
+          amount: lastSuccessful.amount,
+          status: lastSuccessful.status,
+          created_at: lastSuccessful.created_at
+        },
+        tip: 'Ejemplo: DELETE /api/webhooks/keep-last?confirmation=yes'
+      });
+    }
+
+    // BORRAR todos los webhooks EXCEPTO el último exitoso
+    // Esto también borrará sus logs en cascada (si está configurado)
+    const deletedWebhooks = await Webhook.destroy({
+      where: {
+        id: { [Op.ne]: lastSuccessful.id }  // ne = not equal
+      }
+    });
+
+    // Borrar logs huérfanos (por si acaso no hay cascada)
+    const deletedLogs = await WebhookLog.destroy({
+      where: {
+        webhook_id: { [Op.ne]: lastSuccessful.id }
+      }
+    });
+
+    logger.warn(`[Controller] 🗑️ BORRADOS ${deletedWebhooks} webhooks y ${deletedLogs} logs. Mantenido webhook ${lastSuccessful.id}`);
+
+    res.json({
+      success: true,
+      message: `Todos los webhooks borrados excepto el último exitoso`,
+      deleted_webhooks: deletedWebhooks,
+      deleted_logs: deletedLogs,
+      kept_webhook: {
+        id: lastSuccessful.id,
+        ref_payco: lastSuccessful.ref_payco,
+        invoice_id: lastSuccessful.invoice_id,
+        product: lastSuccessful.product,
+        amount: lastSuccessful.amount,
+        status: lastSuccessful.status,
+        created_at: lastSuccessful.created_at
+      }
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error manteniendo solo último webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * Obtiene un webhook por ID
  */
 async function getWebhook(req, res) {
@@ -804,6 +904,7 @@ module.exports = {
   reprocessWebhook,
   cleanDuplicateLogs,
   deleteAllLogs,
+  keepOnlyLastSuccessful,
   getWebhook,
   listWebhooks,
   getWebhookLogs,
