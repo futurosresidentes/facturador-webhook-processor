@@ -108,7 +108,9 @@ async function processWebhook(webhookId) {
       webhook_id: webhookId,
       stage: 'fr360_query',
       status: 'success',
-      details: `Datos obtenidos de FR360 - Producto: ${paymentLinkData.product}, Email: ${paymentLinkData.email}, Cliente: ${paymentLinkData.givenName} ${paymentLinkData.familyName}, Cédula: ${paymentLinkData.identityDocument}, Comercial: ${paymentLinkData.salesRep || 'N/A'}`
+      details: `Datos obtenidos de FR360 - Producto: ${paymentLinkData.product}, Email: ${paymentLinkData.email}, Cliente: ${paymentLinkData.givenName} ${paymentLinkData.familyName}, Cédula: ${paymentLinkData.identityDocument}, Comercial: ${paymentLinkData.salesRep || 'N/A'}`,
+      request_payload: { invoiceId },
+      response_data: paymentLinkData
     });
 
     // NOTIFICACIÓN PASO 2: Consulta FR360
@@ -287,7 +289,20 @@ async function processWebhook(webhookId) {
       webhook_id: webhookId,
       stage: 'crm_management',
       status: 'success',
-      details: `Contacto ${crmAction === 'created' ? 'creado' : 'actualizado'} en CRM - ID: ${contact.id}, Email: ${paymentLinkData.email}, Nombre: ${paymentLinkData.givenName} ${paymentLinkData.familyName}${membershipResult?.activationUrl ? `, activationUrl actualizada` : ''}${etiquetasAplicadas.length > 0 ? `, Etiquetas aplicadas: ${etiquetasAplicadas.join(', ')}` : ''}`
+      details: `Contacto ${crmAction === 'created' ? 'creado' : 'actualizado'} en CRM - ID: ${contact.id}, Email: ${paymentLinkData.email}, Nombre: ${paymentLinkData.givenName} ${paymentLinkData.familyName}${membershipResult?.activationUrl ? `, activationUrl actualizada` : ''}${etiquetasAplicadas.length > 0 ? `, Etiquetas aplicadas: ${etiquetasAplicadas.join(', ')}` : ''}`,
+      request_payload: {
+        email: paymentLinkData.email,
+        firstName: paymentLinkData.givenName,
+        lastName: paymentLinkData.familyName,
+        phone: paymentLinkData.phone,
+        activationUrl: membershipResult?.activationUrl,
+        tags: membershipResult?.etiquetas || []
+      },
+      response_data: {
+        contactId: contact.id,
+        action: crmAction,
+        tagsApplied: etiquetasAplicadas
+      }
     });
 
     // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
@@ -328,7 +343,23 @@ async function processWebhook(webhookId) {
       webhook_id: webhookId,
       stage: 'worldoffice_customer',
       status: 'success',
-      details: `Cliente ${woCustomerResult.action === 'created' ? 'creado' : 'encontrado'} en World Office - ID: ${woCustomerResult.customerId}, Cédula: ${paymentLinkData.identityDocument}, Ciudad: ${woCustomerResult.customerData?.cityName || 'N/A'} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'}), Comercial WO ID: ${woCustomerResult.comercialWOId}`
+      details: `Cliente ${woCustomerResult.action === 'created' ? 'creado' : 'encontrado'} en World Office - ID: ${woCustomerResult.customerId}, Cédula: ${paymentLinkData.identityDocument}, Ciudad: ${woCustomerResult.customerData?.cityName || 'N/A'} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'}), Comercial WO ID: ${woCustomerResult.comercialWOId}`,
+      request_payload: {
+        identityDocument: paymentLinkData.identityDocument,
+        givenName: paymentLinkData.givenName,
+        familyName: paymentLinkData.familyName,
+        email: paymentLinkData.email,
+        phone: paymentLinkData.phone,
+        city: webhook.customer_city,
+        address: webhook.customer_address,
+        comercial: paymentLinkData.comercial
+      },
+      response_data: {
+        action: woCustomerResult.action,
+        customerId: woCustomerResult.customerId,
+        comercialWOId: woCustomerResult.comercialWOId,
+        customerData: woCustomerResult.customerData
+      }
     });
 
     // NOTIFICACIÓN PASO 5: World Office
@@ -403,7 +434,17 @@ async function processWebhook(webhookId) {
         webhook_id: webhookId,
         stage: 'worldoffice_invoice_creation',
         status: 'success',
-        details: `Factura creada ${invoiceResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Nro: ${invoiceResult.numeroFactura}, Doc ID: ${invoiceResult.documentoId}, Productos: [${renglonesResumen}], Subtotal: $${subtotal.toLocaleString('es-CO')}, IVA: $${ivaTotal.toLocaleString('es-CO')}, Total: $${parseFloat(webhook.amount).toLocaleString('es-CO')}`
+        details: `Factura creada ${invoiceResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Nro: ${invoiceResult.numeroFactura}, Doc ID: ${invoiceResult.documentoId}, Productos: [${renglonesResumen}], Subtotal: $${subtotal.toLocaleString('es-CO')}, IVA: $${ivaTotal.toLocaleString('es-CO')}, Total: $${parseFloat(webhook.amount).toLocaleString('es-CO')}`,
+        request_payload: invoiceResult.payload || null,
+        response_data: {
+          numeroFactura: invoiceResult.numeroFactura,
+          documentoId: invoiceResult.documentoId,
+          renglones: invoiceResult.renglones,
+          subtotal,
+          ivaTotal,
+          total: parseFloat(webhook.amount),
+          simulado: invoiceResult.simulado
+        }
       });
 
       // Loguear el payload completo de la factura para debugging
@@ -516,7 +557,13 @@ async function processWebhook(webhookId) {
         webhook_id: webhookId,
         stage: 'worldoffice_invoice_accounting',
         status: 'success',
-        details: `Factura contabilizada ${accountingResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, Status: ${accountingResult.status}, Fecha: ${accountingResult.accountingDate}`
+        details: `Factura contabilizada ${accountingResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, Status: ${accountingResult.status}, Fecha: ${accountingResult.accountingDate}`,
+        request_payload: { documentoId: invoiceResult.documentoId },
+        response_data: {
+          status: accountingResult.status,
+          accountingDate: accountingResult.accountingDate,
+          simulado: accountingResult.simulado
+        }
       });
 
       const paso6bDuration = Date.now() - stepTimestamps.paso6b;
@@ -560,7 +607,9 @@ async function processWebhook(webhookId) {
           webhook_id: webhookId,
           stage: 'worldoffice_dian_emission',
           status: 'info',
-          details: `Emisión DIAN desactivada por configuración (WORLDOFFICE_DIAN_ENABLED=false) - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`
+          details: `Emisión DIAN desactivada por configuración (WORLDOFFICE_DIAN_ENABLED=false) - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
+          request_payload: { documentoId: invoiceResult.documentoId },
+          response_data: { skipped: true, reason: 'WORLDOFFICE_DIAN_ENABLED=false' }
         });
 
       } else if (dianResult.warning) {
@@ -572,7 +621,9 @@ async function processWebhook(webhookId) {
           webhook_id: webhookId,
           stage: 'worldoffice_dian_emission',
           status: 'info',
-          details: `Factura ya emitida previamente (409) - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, CUFE: ${dianResult.cufe || 'N/A'}`
+          details: `Factura ya emitida previamente (409) - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, CUFE: ${dianResult.cufe || 'N/A'}`,
+          request_payload: { documentoId: invoiceResult.documentoId },
+          response_data: { warning: true, cufe: dianResult.cufe, statusCode: 409 }
         });
 
       } else {
@@ -584,7 +635,14 @@ async function processWebhook(webhookId) {
           webhook_id: webhookId,
           stage: 'worldoffice_dian_emission',
           status: 'success',
-          details: `Factura emitida ${dianResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, CUFE: ${dianResult.cufe}, Status DIAN: ${dianResult.dianStatus}, Fecha: ${dianResult.emittedAt}`
+          details: `Factura emitida ${dianResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, CUFE: ${dianResult.cufe}, Status DIAN: ${dianResult.dianStatus}, Fecha: ${dianResult.emittedAt}`,
+          request_payload: { documentoId: invoiceResult.documentoId },
+          response_data: {
+            cufe: dianResult.cufe,
+            dianStatus: dianResult.dianStatus,
+            emittedAt: dianResult.emittedAt,
+            simulado: dianResult.simulado
+          }
         });
       }
 
@@ -626,6 +684,7 @@ async function processWebhook(webhookId) {
         stage: 'worldoffice_dian_emission',
         status: 'error',
         details: `Error emitiendo factura ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
+        request_payload: { documentoId: invoiceResult.documentoId },
         error_message: error.message
       });
 

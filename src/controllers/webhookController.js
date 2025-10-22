@@ -117,6 +117,13 @@ async function reprocessWebhook(req, res) {
       });
     }
 
+    // ELIMINAR TODOS LOS LOGS ANTERIORES para evitar duplicados
+    const deletedCount = await WebhookLog.destroy({
+      where: { webhook_id: id }
+    });
+
+    logger.info(`[Controller] Eliminados ${deletedCount} logs anteriores del webhook ${id}`);
+
     // Resetear estado
     await webhook.update({ status: 'pending', updated_at: new Date() });
 
@@ -132,7 +139,8 @@ async function reprocessWebhook(req, res) {
     res.json({
       success: true,
       message: 'Reprocesamiento iniciado',
-      webhook_id: webhook.id
+      webhook_id: webhook.id,
+      previous_logs_deleted: deletedCount
     });
 
   } catch (error) {
@@ -545,7 +553,7 @@ async function getRecentWebhooks(req, res) {
         {
           model: WebhookLog,
           as: 'logs',
-          attributes: ['id', 'stage', 'status', 'details', 'error_message', 'created_at'],
+          attributes: ['id', 'stage', 'status', 'details', 'request_payload', 'response_data', 'error_message', 'created_at'],
           required: false // LEFT JOIN para incluir webhooks sin logs
         }
       ],
@@ -600,6 +608,8 @@ async function getRecentWebhooks(req, res) {
           logsByStatus[log.status].push({
             stage: log.stage,
             details: log.details,
+            request_payload: log.request_payload,
+            response_data: log.response_data,
             error_message: log.error_message,
             timestamp: log.created_at
           });

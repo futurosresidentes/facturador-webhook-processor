@@ -25,6 +25,16 @@ const WebhookLog = sequelize.define('WebhookLog', {
   details: {
     type: DataTypes.TEXT
   },
+  request_payload: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    field: 'request_payload'
+  },
+  response_data: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    field: 'response_data'
+  },
   error_message: {
     type: DataTypes.TEXT,
     field: 'error_message'
