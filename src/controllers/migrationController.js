@@ -39,11 +39,51 @@ async function runMigrations(req, res) {
     });
 
     if (existingColumns.length === 2) {
-      logger.info('[Migration] Las columnas ya existen, migración no necesaria');
+      logger.info('[Migration] Las columnas ya existen, verificando índices...');
+
+      // Verificar si faltan índices
+      const checkIndexes = `
+        SELECT indexname
+        FROM pg_indexes
+        WHERE tablename = 'webhook_processing_logs'
+        AND indexname IN ('idx_webhook_logs_request_payload', 'idx_webhook_logs_response_data');
+      `;
+
+      const existingIndexes = await sequelize.query(checkIndexes, {
+        type: sequelize.QueryTypes.SELECT
+      });
+
+      if (existingIndexes.length === 2) {
+        logger.info('[Migration] Índices ya existen, migración completa');
+        return res.json({
+          success: true,
+          message: 'Migración ya ejecutada previamente (columnas e índices existen)',
+          columns_found: existingColumns.map(c => c.column_name),
+          indexes_found: existingIndexes.map(i => i.indexname)
+        });
+      }
+
+      // Si faltan índices, crearlos
+      logger.info('[Migration] Columnas OK, pero faltan índices. Creando índices...');
+
+      const createIndexesSQL = `
+        CREATE INDEX IF NOT EXISTS idx_webhook_logs_request_payload ON webhook_processing_logs USING GIN (request_payload);
+        CREATE INDEX IF NOT EXISTS idx_webhook_logs_response_data ON webhook_processing_logs USING GIN (response_data);
+      `;
+
+      await sequelize.query(createIndexesSQL);
+      logger.info('[Migration] ✅ Índices creados exitosamente');
+
+      // Verificar índices creados
+      const verifyIndexes = await sequelize.query(checkIndexes, {
+        type: sequelize.QueryTypes.SELECT
+      });
+
       return res.json({
         success: true,
-        message: 'Migración ya ejecutada previamente',
-        columns_found: existingColumns.map(c => c.column_name)
+        message: 'Índices creados exitosamente (columnas ya existían)',
+        columns_found: existingColumns.map(c => c.column_name),
+        indexes_created: verifyIndexes.map(i => i.indexname)
       });
     }
 
