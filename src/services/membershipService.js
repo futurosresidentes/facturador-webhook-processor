@@ -180,7 +180,10 @@ async function createMemberships(params) {
     } else {
       // MODO PRODUCCIÓN: Llamar API real
       logger.info(`[Membership] 🟢 MODO PRODUCCIÓN: Enviando a API`);
-      logger.info(`[Membership] Payload enviado:`, JSON.stringify(payload, null, 2));
+      logger.info(`[Membership] Payload enviado:`);
+      console.log('========== PAYLOAD COMPLETO ==========');
+      console.log(JSON.stringify(payload, null, 2));
+      console.log('======================================');
 
       try {
         const response = await axios.post(config.frapp.apiUrl, payload, {
@@ -194,15 +197,19 @@ async function createMemberships(params) {
         if (response.status >= 200 && response.status < 300) {
           logger.info(`[Membership] API respondió exitosamente: ${response.status}`);
           logger.info(`[Membership] ====== INICIO RESPUESTA API ======`);
-          logger.info(`[Membership] Type of response.data: ${typeof response.data}`);
-          logger.info(`[Membership] Response.data es null? ${response.data === null}`);
-          logger.info(`[Membership] Response.data es undefined? ${response.data === undefined}`);
 
-          if (response.data) {
-            logger.info(`[Membership] Response.data keys:`, Object.keys(response.data));
-            logger.info(`[Membership] Response.data completo:`, JSON.stringify(response.data, null, 2));
+          console.log('========== RESPONSE COMPLETO ==========');
+          console.log('Status:', response.status);
+          console.log('Headers:', JSON.stringify(response.headers, null, 2));
+          console.log('Data type:', typeof response.data);
+          console.log('Data:', JSON.stringify(response.data, null, 2));
+          console.log('Data keys:', response.data ? Object.keys(response.data) : 'N/A');
+          console.log('=======================================');
+
+          if (response.data && Object.keys(response.data).length > 0) {
+            logger.info(`[Membership] Response.data tiene ${Object.keys(response.data).length} propiedades`);
           } else {
-            logger.warn(`[Membership] ⚠️ Response.data está vacío o es null/undefined`);
+            logger.warn(`[Membership] ⚠️ Response.data está vacío (objeto sin propiedades)`);
           }
           logger.info(`[Membership] ====== FIN RESPUESTA API ======`);
 
