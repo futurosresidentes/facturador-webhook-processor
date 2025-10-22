@@ -24,16 +24,6 @@ const woClient = axios.create({
   }
 });
 
-// Configuración de axios para Strapi
-const strapiClient = axios.create({
-  baseURL: config.strapi?.apiUrl,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${config.strapi?.apiToken}`
-  }
-});
-
 // ==================== CONSTANTES DE FACTURACIÓN ====================
 
 // ISBNs de los 24 libros FR
@@ -241,62 +231,39 @@ function getInventoryId(producto) {
  * @param {string} comercialName - Nombre del comercial
  * @returns {Promise<number>} ID del comercial en WO (o 2259 por defecto)
  */
+/**
+ * Mapeo fijo de comerciales a sus IDs en World Office
+ */
+const COMERCIALES_MAP = {
+  'Santiago Flórez Rojo': 1016,
+  'Lorena Blandón Carmona': 1024,
+  'Giancarlo Aguilar Fonnegra': 1013,
+  'Ángela Yirley Silva David': 1006
+};
+
+const DEFAULT_COMERCIAL_ID = 2259;
+
 async function findComercialWOId(comercialName) {
   try {
     if (!comercialName) {
       logger.info('[WorldOffice] No se proporcionó comercial, usando ID por defecto: 2259');
-      return 2259;
+      return DEFAULT_COMERCIAL_ID;
     }
 
-    // Paso 1: Buscar en Strapi para obtener la cédula
-    logger.info(`[WorldOffice] Buscando comercial en Strapi: "${comercialName}"`);
-    const strapiResponse = await strapiClient.get('/api/comerciales', {
-      params: {
-        'filters[nombre][$eq]': comercialName
-      }
-    });
+    // Buscar en el mapeo fijo
+    const comercialId = COMERCIALES_MAP[comercialName];
 
-    if (!strapiResponse.data?.data || strapiResponse.data.data.length === 0) {
-      logger.warn(`[WorldOffice] Comercial "${comercialName}" no encontrado en Strapi. Usando ID por defecto: 2259`);
-      return 2259;
-    }
-
-    const comercialData = strapiResponse.data.data[0];
-    const cedulaComercial = comercialData.numero_documento;
-
-    logger.info(`[WorldOffice] Comercial encontrado en Strapi - Cédula: ${cedulaComercial}`);
-
-    // Paso 2: Buscar en World Office por cédula (con reintentos)
-    logger.info(`[WorldOffice] Buscando comercial en WO con cédula: ${cedulaComercial}`);
-    try {
-      const woResponse = await retryOperation(
-        () => woClient.get(`/api/v1/terceros/identificacion/${cedulaComercial}`),
-        `Búsqueda de comercial (${cedulaComercial})`
-      );
-
-      logger.info(`[WorldOffice] Respuesta WO status: ${woResponse.data?.status}`);
-      logger.info(`[WorldOffice] Respuesta WO data.id: ${woResponse.data?.data?.id}`);
-
-      if (woResponse.data?.status === 'OK' && woResponse.data?.data?.id) {
-        const idWOComercial = woResponse.data.data.id;
-        logger.info(`[WorldOffice] ✅ Comercial encontrado en WO - ID: ${idWOComercial}`);
-        return idWOComercial;
-      } else {
-        logger.warn(`[WorldOffice] Respuesta de WO no tiene el formato esperado. Status: ${woResponse.data?.status}, ID: ${woResponse.data?.data?.id}`);
-        return 2259;
-      }
-    } catch (woError) {
-      if (woError.response?.data?.status === 'NOT_FOUND') {
-        logger.warn(`[WorldOffice] Comercial con cédula ${cedulaComercial} no encontrado en WO (NOT_FOUND). Usando ID por defecto: 2259`);
-      } else {
-        logger.error(`[WorldOffice] Error buscando comercial en WO - Status: ${woError.response?.status}, Message: ${woError.message}`);
-      }
-      return 2259;
+    if (comercialId) {
+      logger.info(`[WorldOffice] ✅ Comercial "${comercialName}" → ID WO: ${comercialId}`);
+      return comercialId;
+    } else {
+      logger.info(`[WorldOffice] Comercial "${comercialName}" no está en el mapeo. Usando ID por defecto: ${DEFAULT_COMERCIAL_ID}`);
+      return DEFAULT_COMERCIAL_ID;
     }
 
   } catch (error) {
     logger.error('[WorldOffice] Error en findComercialWOId:', error.message);
-    return 2259; // Siempre retornar el ID por defecto en caso de error
+    return DEFAULT_COMERCIAL_ID;
   }
 }
 
