@@ -43,8 +43,14 @@ router.get('/stage/:stage', authenticate, webhookController.getWebhooksByStage);
 
 /**
  * GET /api/webhooks
- * Lista webhooks con filtros
- * Query params: ?status=pending&current_stage=worldoffice_dian&incomplete=true&limit=50&offset=0
+ * Lista todos los webhooks con logs (o filtra por parámetros)
+ * Query params:
+ *   ?id=88 - Busca webhook específico con logs detallados
+ *   ?limit=10 - Limita cantidad (sin limit trae TODOS)
+ *   ?status=pending - Filtra por status
+ *   ?current_stage=worldoffice_dian - Filtra por stage
+ *   ?incomplete=true - Solo webhooks incompletos
+ *   ?offset=0 - Paginación
  * Requiere: Authorization: Bearer <token>
  */
 router.get('/', authenticate, webhookController.listWebhooks);

@@ -570,56 +570,180 @@ async function getWebhook(req, res) {
 
 /**
  * Lista webhooks con filtros
+ * Query params:
+ *   ?id=88 - Busca webhook específico con logs
+ *   ?limit=10 - Limita cantidad (default: todos)
+ *   ?status=pending - Filtra por status
+ *   ?current_stage=worldoffice_dian - Filtra por stage
+ *   ?incomplete=true - Solo incompletos
  */
 async function listWebhooks(req, res) {
   try {
     const {
+      id,
       status,
       current_stage,
       last_completed_stage,
       incomplete,
-      limit = 50,
+      limit,
       offset = 0,
       order = 'created_at',
       dir = 'DESC'
     } = req.query;
 
+    // Si se proporciona ID, buscar ese webhook específico con logs
+    if (id) {
+      const webhook = await Webhook.findByPk(parseInt(id), {
+        include: [{
+          model: WebhookLog,
+          as: 'logs',
+          attributes: ['id', 'stage', 'status', 'details', 'request_payload', 'response_data', 'error_message', 'created_at'],
+          required: false
+        }],
+        order: [
+          [{ model: WebhookLog, as: 'logs' }, 'created_at', 'ASC']
+        ]
+      });
+
+      if (!webhook) {
+        return res.status(404).json({
+          success: false,
+          error: `Webhook con ID ${id} no encontrado`
+        });
+      }
+
+      // Formatear con logs agrupados
+      const webhookData = webhook.toJSON();
+      const logs = webhookData.logs || [];
+
+      const logsByStatus = {
+        success: [],
+        error: [],
+        info: []
+      };
+
+      logs.forEach(log => {
+        if (logsByStatus[log.status]) {
+          logsByStatus[log.status].push({
+            stage: log.stage,
+            details: log.details,
+            request_payload: log.request_payload,
+            response_data: log.response_data,
+            error_message: log.error_message,
+            timestamp: log.created_at
+          });
+        }
+      });
+
+      return res.json({
+        success: true,
+        webhook: {
+          ...webhookData,
+          logs: {
+            total: logs.length,
+            by_status: logsByStatus,
+            all: logs
+          }
+        }
+      });
+    }
+
+    // Búsqueda general con filtros
     const where = {};
 
-    // Filtro por status
     if (status) {
       where.status = status;
     }
 
-    // Filtro por stage actual
     if (current_stage) {
       where.current_stage = current_stage;
     }
 
-    // Filtro por último stage completado
     if (last_completed_stage) {
       where.last_completed_stage = last_completed_stage;
     }
 
-    // Filtro de incompletos (cualquier status que NO sea 'completed')
     if (incomplete === 'true') {
-      const { Op } = require('sequelize');
       where.status = {
         [Op.ne]: 'completed'
       };
     }
 
-    const webhooks = await Webhook.findAndCountAll({
+    // Query options
+    const queryOptions = {
       where,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [[order, dir]]
+      include: [{
+        model: WebhookLog,
+        as: 'logs',
+        attributes: ['id', 'stage', 'status', 'details', 'created_at'],
+        required: false
+      }],
+      order: [
+        [order, dir],
+        [{ model: WebhookLog, as: 'logs' }, 'created_at', 'ASC']
+      ],
+      offset: parseInt(offset)
+    };
+
+    // Solo agregar limit si se especifica
+    if (limit) {
+      queryOptions.limit = parseInt(limit);
+    }
+
+    const webhooks = await Webhook.findAndCountAll(queryOptions);
+
+    // Formatear webhooks con logs agrupados
+    const formattedWebhooks = webhooks.rows.map(webhook => {
+      const webhookData = webhook.toJSON();
+      const logs = webhookData.logs || [];
+
+      const logsByStatus = {
+        success: [],
+        error: [],
+        info: []
+      };
+
+      logs.forEach(log => {
+        if (logsByStatus[log.status]) {
+          logsByStatus[log.status].push({
+            stage: log.stage,
+            details: log.details,
+            timestamp: log.created_at
+          });
+        }
+      });
+
+      return {
+        id: webhookData.id,
+        ref_payco: webhookData.ref_payco,
+        transaction_id: webhookData.transaction_id,
+        invoice_id: webhookData.invoice_id,
+        customer: {
+          email: webhookData.customer_email,
+          name: webhookData.customer_name
+        },
+        product: webhookData.product,
+        amount: webhookData.amount,
+        currency: webhookData.currency,
+        response: webhookData.response,
+        status: webhookData.status,
+        current_stage: webhookData.current_stage,
+        last_completed_stage: webhookData.last_completed_stage,
+        created_at: webhookData.created_at,
+        updated_at: webhookData.updated_at,
+        logs: {
+          total: logs.length,
+          by_status: logsByStatus,
+          all: logs
+        }
+      };
     });
 
     res.json({
       success: true,
       total: webhooks.count,
-      webhooks: webhooks.rows
+      count: formattedWebhooks.length,
+      webhooks: formattedWebhooks
     });
 
   } catch (error) {
