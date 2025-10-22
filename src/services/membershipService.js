@@ -193,7 +193,18 @@ async function createMemberships(params) {
 
         if (response.status >= 200 && response.status < 300) {
           logger.info(`[Membership] API respondió exitosamente: ${response.status}`);
-          logger.info(`[Membership] Respuesta completa de API:`, JSON.stringify(response.data, null, 2));
+          logger.info(`[Membership] ====== INICIO RESPUESTA API ======`);
+          logger.info(`[Membership] Type of response.data: ${typeof response.data}`);
+          logger.info(`[Membership] Response.data es null? ${response.data === null}`);
+          logger.info(`[Membership] Response.data es undefined? ${response.data === undefined}`);
+
+          if (response.data) {
+            logger.info(`[Membership] Response.data keys:`, Object.keys(response.data));
+            logger.info(`[Membership] Response.data completo:`, JSON.stringify(response.data, null, 2));
+          } else {
+            logger.warn(`[Membership] ⚠️ Response.data está vacío o es null/undefined`);
+          }
+          logger.info(`[Membership] ====== FIN RESPUESTA API ======`);
 
           // Capturar activationUrl si viene en la respuesta (puede venir en cualquier llamado)
           if (response.data && response.data.activationUrl) {
@@ -201,7 +212,10 @@ async function createMemberships(params) {
             membershipRecord.activation_url = activationUrl;
             logger.info(`[Membership] ✅ activationUrl capturada: ${activationUrl}`);
           } else if (esPrimero) {
-            logger.warn(`[Membership] ⚠️ Primera membresía NO retornó activationUrl. Response data:`, response.data);
+            logger.warn(`[Membership] ⚠️ Primera membresía NO retornó activationUrl`);
+            if (response.data) {
+              logger.warn(`[Membership] Campos disponibles en response:`, Object.keys(response.data));
+            }
           }
 
           membershipsCreadas.push({
