@@ -13,6 +13,7 @@ const logger = require('../config/logger');
 const cityCache = require('./worldOfficeCityCache');
 const FeatureFlag = require('../models/FeatureFlag');
 const { getColombiaDateString } = require('../utils/dateUtils');
+const { getProductBase } = require('../utils/productFilter');
 
 // Configuración de axios para World Office
 const woClient = axios.create({
@@ -26,33 +27,40 @@ const woClient = axios.create({
 
 // ==================== CONSTANTES DE FACTURACIÓN ====================
 
-// ISBNs de los 24 libros FR
-const ISBNS = [
+// ISBNs de libros BÁSICAS (11 libros)
+const ISBNS_BASICAS = [
   "978-628-95885-0-7",
+  "978-628-95885-1-4",
   "978-628-95885-2-1",
   "978-628-95885-3-8",
-  "978-628-95885-1-4",
-  "978-628-95885-4-5",
-  "978-628-95885-6-9",
-  "978-628-95885-7-6",
   "978-628-95885-5-2",
-  "978-628-96023-3-3",
-  "978-628-96023-0-2",
-  "978-628-96023-1-9",
-  "978-628-96023-2-6",
   "978-628-96023-4-0",
   "978-628-96023-5-7",
   "978-628-96023-7-1",
-  "978-628-96023-6-4",
-  "978-628-96166-1-3",
-  "978-628-96023-9-5",
-  "978-628-96023-8-8",
-  "978-628-96166-0-6",
-  "978-628-96166-5-1",
-  "978-628-96166-2-0",
   "978-628-96166-3-7",
-  "978-628-96166-4-4"
+  "978-628-96023-9-5",
+  "978-628-96023-8-8"
 ];
+
+// ISBNs de libros CLÍNICAS (13 libros)
+const ISBNS_CLINICAS = [
+  "978-628-95885-4-5",
+  "978-628-95885-6-9",
+  "978-628-95885-7-6",
+  "978-628-96023-0-2",
+  "978-628-96023-1-9",
+  "978-628-96023-2-6",
+  "978-628-96023-3-3",
+  "978-628-96023-6-4",
+  "978-628-96166-5-1",
+  "978-628-96166-4-4",
+  "978-628-96166-2-0",
+  "978-628-96166-1-3",
+  "978-628-96166-0-6"
+];
+
+// TODOS los ISBNs (24 libros = BÁSICAS + CLÍNICAS)
+const ISBNS_TODOS = [...ISBNS_BASICAS, ...ISBNS_CLINICAS];
 
 // Precio por libro
 const PRECIO_POR_LIBRO = 200000;
@@ -177,6 +185,20 @@ function splitNames(fullName) {
 function getISBNs(producto, valor) {
   const cantidadLibros = Math.ceil(valor / PRECIO_POR_LIBRO);
 
+  // Determinar qué ISBNs usar según el producto base
+  const productoBase = getProductBase(producto);
+  let isbnsParaUsar;
+
+  if (productoBase === 'Curso Intensivo UDEA 2026') {
+    // UDEA solo usa ISBNs de clínicas
+    isbnsParaUsar = ISBNS_CLINICAS;
+    logger.info(`[WorldOffice] Producto UDEA detectado → Usando solo ISBNs CLÍNICAS (${ISBNS_CLINICAS.length} libros)`);
+  } else {
+    // Resto de productos usan todos los ISBNs
+    isbnsParaUsar = ISBNS_TODOS;
+    logger.info(`[WorldOffice] Producto Élite detectado → Usando TODOS los ISBNs (${ISBNS_TODOS.length} libros)`);
+  }
+
   // Normalizar producto
   const productoNorm = quitarAcentos(producto.toLowerCase())
     .replace(/cuota/gi, 'parte')
@@ -190,17 +212,20 @@ function getISBNs(producto, valor) {
     // Es una cuota específica (Parte 1, 2, 3...)
     const parteNumero = parseInt(parteMatch[1], 10);
     const primerLibro = (parteNumero - 1) * cantidadLibros;
-    const isbnsSeleccionados = ISBNS.slice(primerLibro, primerLibro + cantidadLibros);
+    const isbnsSeleccionados = isbnsParaUsar.slice(primerLibro, primerLibro + cantidadLibros);
+    logger.info(`[WorldOffice] Cuota ${parteNumero} → Libros del ${primerLibro + 1} al ${primerLibro + cantidadLibros} (${isbnsSeleccionados.length} ISBNs)`);
     return "ISBNS: " + isbnsSeleccionados.join(", ");
 
   } else if (productoNorm.includes("autorizada")) {
     // Cuota extraordinaria/autorizada → últimos libros
-    const isbnsSeleccionados = ISBNS.slice(-cantidadLibros);
+    const isbnsSeleccionados = isbnsParaUsar.slice(-cantidadLibros);
+    logger.info(`[WorldOffice] Cuota autorizada → Últimos ${cantidadLibros} libros (${isbnsSeleccionados.length} ISBNs)`);
     return "ISBNS: " + isbnsSeleccionados.join(", ");
 
   } else {
-    // Pago completo → todos los ISBNs
-    return "ISBNS: " + ISBNS.join(", ");
+    // Pago completo → todos los ISBNs del array correspondiente
+    logger.info(`[WorldOffice] Pago completo → Todos los ISBNs (${isbnsParaUsar.length} libros)`);
+    return "ISBNS: " + isbnsParaUsar.join(", ");
   }
 }
 
