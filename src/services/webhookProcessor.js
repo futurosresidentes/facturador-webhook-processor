@@ -70,6 +70,14 @@ async function processWebhook(webhookId) {
     logger.info(`[Processor] Invoice ID extraído: ${invoiceId}`);
     completedStages.invoice_extraction = true;
 
+    // LOG PASO 1: Invoice ID extraído
+    await WebhookLog.create({
+      webhook_id: webhookId,
+      stage: 'invoice_extraction',
+      status: 'success',
+      details: `Invoice ID extraído: ${invoiceId} (de ${webhook.invoice_id})`
+    });
+
     // NOTIFICACIÓN PASO 1: Invoice ID extraído
     const paso1Duration = Date.now() - stepTimestamps.paso1;
     await notificationService.notifyStep(1, 'EXTRACCIÓN INVOICE ID', {
@@ -94,6 +102,14 @@ async function processWebhook(webhookId) {
     logger.info(`[Processor] Producto: ${paymentLinkData.product}`);
     logger.info(`[Processor] Email: ${paymentLinkData.email}`);
     completedStages.fr360_query = true;
+
+    // LOG PASO 2: Consulta FR360 exitosa
+    await WebhookLog.create({
+      webhook_id: webhookId,
+      stage: 'fr360_query',
+      status: 'success',
+      details: `Datos obtenidos de FR360 - Producto: ${paymentLinkData.product}, Email: ${paymentLinkData.email}, Cliente: ${paymentLinkData.givenName} ${paymentLinkData.familyName}, Cédula: ${paymentLinkData.identityDocument}, Comercial: ${paymentLinkData.salesRep || 'N/A'}`
+    });
 
     // NOTIFICACIÓN PASO 2: Consulta FR360
     const paso2Duration = Date.now() - stepTimestamps.paso2;
@@ -140,13 +156,33 @@ async function processWebhook(webhookId) {
         startTimestamp: stepTimestamps.paso3 // Pasar timestamp de inicio
       });
 
-      // membershipResult contiene: { activationUrl, etiquetas, membershipsCreadas }
+      // membershipResult contiene: { activationUrl, etiquetas, membreshipsCreadas }
       logger.info(`[Processor] Membresías procesadas. Activation URL: ${membershipResult.activationUrl || 'N/A'}`);
       logger.info(`[Processor] Etiquetas a aplicar: ${membershipResult.etiquetas.join(', ')}`);
       completedStages.memberships = true;
 
+      // LOG PASO 3: Membresías creadas exitosamente
+      const membershipsDetail = membershipResult.membershipsCreadas
+        .map((m, idx) => `${idx + 1}. ${m.planNombre} (Plan ID: ${m.membershipPlanId}) - ${m.duracionDias ? `${m.duracionDias} días` : `Hasta ${m.fechaFinFija}`}`)
+        .join('; ');
+
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'membership_creation',
+        status: 'success',
+        details: `${membershipResult.membreshipsCreadas.length} membresía(s) creada(s) - ${membershipsDetail}${membershipResult.activationUrl ? ` | activationUrl: ${membershipResult.activationUrl}` : ''}`
+      });
+
     } else {
       logger.info(`[Processor] Producto no requiere membresías: ${paymentLinkData.product}`);
+
+      // LOG PASO 3: Sin membresías
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'membership_check',
+        status: 'info',
+        details: `Producto no requiere membresías: ${paymentLinkData.product} (Cuota 2+ o producto no permitido)`
+      });
 
       // NOTIFICACIÓN PASO 3: Sin membresías
       const paso3Duration = Date.now() - stepTimestamps.paso3;
@@ -240,6 +276,14 @@ async function processWebhook(webhookId) {
 
     completedStages.crm = true;
 
+    // LOG PASO 4: CRM gestionado
+    await WebhookLog.create({
+      webhook_id: webhookId,
+      stage: 'crm_management',
+      status: 'success',
+      details: `Contacto ${crmAction === 'created' ? 'creado' : 'actualizado'} en CRM - ID: ${contact.id}, Email: ${paymentLinkData.email}, Nombre: ${paymentLinkData.givenName} ${paymentLinkData.familyName}${membershipResult?.activationUrl ? `, activationUrl actualizada` : ''}${etiquetasAplicadas.length > 0 ? `, Etiquetas aplicadas: ${etiquetasAplicadas.join(', ')}` : ''}`
+    });
+
     // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
     const paso4Duration = Date.now() - stepTimestamps.paso4;
     await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
@@ -272,6 +316,14 @@ async function processWebhook(webhookId) {
 
     logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId} | Comercial WO ID: ${woCustomerResult.comercialWOId}`);
     completedStages.worldoffice_customer = true;
+
+    // LOG PASO 5: Cliente World Office gestionado
+    await WebhookLog.create({
+      webhook_id: webhookId,
+      stage: 'worldoffice_customer',
+      status: 'success',
+      details: `Cliente ${woCustomerResult.action === 'created' ? 'creado' : 'encontrado'} en World Office - ID: ${woCustomerResult.customerId}, Cédula: ${paymentLinkData.identityDocument}, Ciudad: ${woCustomerResult.customerData?.cityName || 'N/A'} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'}), Comercial WO ID: ${woCustomerResult.comercialWOId}`
+    });
 
     // NOTIFICACIÓN PASO 5: World Office
     const paso5Duration = Date.now() - stepTimestamps.paso5;
@@ -321,6 +373,32 @@ async function processWebhook(webhookId) {
 
       completedStages.worldoffice_invoice = true;
       logger.info(`[Processor] Factura creada - Documento ID: ${invoiceResult.documentoId}`);
+
+      // LOG PASO 6A: Factura creada
+      const renglonesResumen = invoiceResult.renglones?.map(r => {
+        const inventarioInfo = r.idInventario === 1010 ? 'FR Libros' :
+                               r.idInventario === 1001 ? 'MIR' :
+                               r.idInventario === 1054 ? 'Simulación' :
+                               r.idInventario === 1004 ? 'Iaura' :
+                               r.idInventario === 1008 ? 'Sculapp' :
+                               r.idInventario === 1003 ? 'Asesoría' :
+                               r.idInventario === 1062 ? 'Publicidad' :
+                               r.idInventario === 1057 ? 'Acceso VIP' :
+                               r.idInventario === 1059 ? 'Inglés' :
+                               r.idInventario === 1067 ? 'VIP - Rmastery' :
+                               `ID ${r.idInventario}`;
+        return `${inventarioInfo} (${r.cantidad || 1} und, $${(r.valorUnitario || r.valorTotal || 0).toLocaleString('es-CO')})`;
+      }).join(', ') || 'N/A';
+
+      const subtotal = invoiceResult.renglones?.reduce((sum, r) => sum + (r.valorUnitario || r.valorTotal || 0), 0) || 0;
+      const ivaTotal = invoiceResult.renglones?.reduce((sum, r) => sum + (r.iva || 0), 0) || 0;
+
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'worldoffice_invoice_creation',
+        status: 'success',
+        details: `Factura creada ${invoiceResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Nro: ${invoiceResult.numeroFactura}, Doc ID: ${invoiceResult.documentoId}, Productos: [${renglonesResumen}], Subtotal: $${subtotal.toLocaleString('es-CO')}, IVA: $${ivaTotal.toLocaleString('es-CO')}, Total: $${parseFloat(webhook.amount).toLocaleString('es-CO')}`
+      });
 
       // Loguear el payload completo de la factura para debugging
       if (invoiceResult.payload) {
@@ -373,9 +451,7 @@ async function processWebhook(webhookId) {
         }).join('\n\n');
       }
 
-      // Calcular totales
-      const subtotal = invoiceResult.renglones?.reduce((sum, r) => sum + (r.valorUnitario || r.valorTotal || 0), 0) || 0;
-      const ivaTotal = invoiceResult.renglones?.reduce((sum, r) => sum + (r.iva || 0), 0) || 0;
+      // Calcular totales (ya calculados arriba para el log, reutilizarlos)
       const totalFactura = parseFloat(webhook.amount);
 
       const paso6aDuration = Date.now() - stepTimestamps.paso6a;
@@ -408,6 +484,16 @@ async function processWebhook(webhookId) {
 
     } catch (error) {
       logger.error(`[Processor] Error creando factura: ${error.message}`);
+
+      // LOG ERROR PASO 6A: Error creando factura
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'worldoffice_invoice_creation',
+        status: 'error',
+        details: `Error creando factura en World Office - Cliente ID: ${woCustomerResult.customerId}, Producto: ${paymentLinkData.product}`,
+        error_message: error.message
+      });
+
       throw error;
     }
 
@@ -418,6 +504,14 @@ async function processWebhook(webhookId) {
       accountingResult = await worldOfficeService.accountInvoice(invoiceResult.documentoId);
       completedStages.worldoffice_accounting = true;
       logger.info(`[Processor] Factura contabilizada - Status: ${accountingResult.status}`);
+
+      // LOG PASO 6B: Factura contabilizada
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'worldoffice_invoice_accounting',
+        status: 'success',
+        details: `Factura contabilizada ${accountingResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, Status: ${accountingResult.status}, Fecha: ${accountingResult.accountingDate}`
+      });
 
       const paso6bDuration = Date.now() - stepTimestamps.paso6b;
       const modoContabilizacion = accountingResult.simulado ? '🟡 MODO TESTING - Contabilización simulada' : '🟢 MODO PRODUCCIÓN - Contabilización real';
@@ -433,6 +527,16 @@ async function processWebhook(webhookId) {
 
     } catch (error) {
       logger.error(`[Processor] Error contabilizando factura: ${error.message}`);
+
+      // LOG ERROR PASO 6B: Error contabilizando factura
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'worldoffice_invoice_accounting',
+        status: 'error',
+        details: `Error contabilizando factura - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
+        error_message: error.message
+      });
+
       throw error;
     }
 
@@ -444,12 +548,38 @@ async function processWebhook(webhookId) {
 
       if (dianResult.skipped) {
         logger.info(`[Processor] Emisión DIAN omitida (desactivada en configuración)`);
+
+        // LOG PASO 6C: DIAN desactivada
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'worldoffice_dian_emission',
+          status: 'info',
+          details: `Emisión DIAN desactivada por configuración (WORLDOFFICE_DIAN_ENABLED=false) - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`
+        });
+
       } else if (dianResult.warning) {
         logger.warn(`[Processor] Factura ya emitida previamente (409)`);
         completedStages.worldoffice_dian = true;
+
+        // LOG PASO 6C: DIAN ya emitida
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'worldoffice_dian_emission',
+          status: 'info',
+          details: `Factura ya emitida previamente (409) - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, CUFE: ${dianResult.cufe || 'N/A'}`
+        });
+
       } else {
         logger.info(`[Processor] Factura emitida ante DIAN - CUFE: ${dianResult.cufe}`);
         completedStages.worldoffice_dian = true;
+
+        // LOG PASO 6C: DIAN emitida exitosamente
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'worldoffice_dian_emission',
+          status: 'success',
+          details: `Factura emitida ${dianResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, CUFE: ${dianResult.cufe}, Status DIAN: ${dianResult.dianStatus}, Fecha: ${dianResult.emittedAt}`
+        });
       }
 
       const paso6cDuration = Date.now() - stepTimestamps.paso6c;
@@ -483,6 +613,16 @@ async function processWebhook(webhookId) {
 
     } catch (error) {
       logger.error(`[Processor] Error emitiendo factura ante DIAN: ${error.message}`);
+
+      // LOG ERROR PASO 6C: Error en emisión DIAN
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'worldoffice_dian_emission',
+        status: 'error',
+        details: `Error emitiendo factura ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
+        error_message: error.message
+      });
+
       // No lanzar error, continuar proceso (emisión DIAN no es crítica)
       logger.warn(`[Processor] Continuando proceso sin emisión DIAN`);
     }
