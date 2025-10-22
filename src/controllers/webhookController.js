@@ -2,6 +2,7 @@ const { Webhook, WebhookLog } = require('../models');
 const { Op } = require('sequelize');
 const webhookProcessor = require('../services/webhookProcessor');
 const logger = require('../config/logger');
+const { normalizeProductName } = require('../utils/productFilter');
 
 /**
  * Recibe un webhook de ePayco
@@ -29,7 +30,7 @@ async function receiveWebhook(req, res) {
       customer_name: `${webhookData.x_customer_name || ''} ${webhookData.x_customer_lastname || ''}`.trim(),
       customer_city: normalizeValue(webhookData.x_customer_city),
       customer_address: normalizeValue(webhookData.x_customer_address),
-      product: webhookData.x_description,
+      product: normalizeProductName(webhookData.x_description),  // Normalizar producto
       amount: webhookData.x_amount,
       currency: webhookData.x_currency_code,
       response: webhookData.x_response,
