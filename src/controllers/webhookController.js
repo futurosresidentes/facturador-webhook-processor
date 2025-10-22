@@ -567,7 +567,6 @@ async function getRecentWebhooks(req, res) {
         'status',
         'current_stage',
         'last_completed_stage',
-        'error_message',
         'created_at',
         'updated_at'
       ]
@@ -621,7 +620,6 @@ async function getRecentWebhooks(req, res) {
         status: webhookData.status,
         current_stage: webhookData.current_stage,
         last_completed_stage: webhookData.last_completed_stage,
-        error_message: webhookData.error_message,
         created_at: webhookData.created_at,
         updated_at: webhookData.updated_at,
         logs: {
