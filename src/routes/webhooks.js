@@ -109,4 +109,11 @@ router.patch('/:id/status', authenticate, webhookController.updateWebhookStatus)
  */
 router.patch('/:id', authenticate, webhookController.editWebhook);
 
+/**
+ * DELETE /api/webhooks/:id
+ * Elimina un webhook por ID (incluye sus logs por CASCADE)
+ * Requiere: Authorization: Bearer <token>
+ */
+router.delete('/:id', authenticate, webhookController.deleteWebhook);
+
 module.exports = router;

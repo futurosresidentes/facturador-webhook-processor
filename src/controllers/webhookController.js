@@ -479,6 +479,61 @@ async function editWebhook(req, res) {
 }
 
 /**
+ * Elimina un webhook por ID
+ * También elimina todos sus logs asociados (cascade)
+ */
+async function deleteWebhook(req, res) {
+  try {
+    const { id } = req.params;
+
+    logger.info(`[Controller] Intentando eliminar webhook ${id}`);
+
+    // Buscar webhook con sus logs
+    const webhook = await Webhook.findByPk(id, {
+      include: [{
+        model: WebhookLog,
+        as: 'logs'
+      }]
+    });
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    // Guardar info antes de eliminar
+    const webhookInfo = {
+      id: webhook.id,
+      ref_payco: webhook.ref_payco,
+      product: webhook.product,
+      customer_email: webhook.customer_email,
+      status: webhook.status,
+      logs_count: webhook.logs ? webhook.logs.length : 0
+    };
+
+    // Eliminar webhook (los logs se eliminan automáticamente por CASCADE)
+    await webhook.destroy();
+
+    logger.info(`[Controller] Webhook ${id} eliminado exitosamente (${webhookInfo.logs_count} logs eliminados)`);
+
+    res.json({
+      success: true,
+      message: 'Webhook eliminado exitosamente',
+      deleted_webhook: webhookInfo
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error eliminando webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * Obtiene un webhook por ID
  */
 async function getWebhook(req, res) {
@@ -997,6 +1052,7 @@ module.exports = {
   deleteAllLogs,
   keepOnlyLastSuccessful,
   editWebhook,
+  deleteWebhook,
   getWebhook,
   listWebhooks,
   getWebhookLogs,
