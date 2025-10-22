@@ -195,46 +195,110 @@ async function createMemberships(params) {
         });
 
         if (response.status >= 200 && response.status < 300) {
-          logger.info(`[Membership] API respondió exitosamente: ${response.status}`);
-          logger.info(`[Membership] ====== INICIO RESPUESTA API ======`);
+          logger.info(`[Membership] API respondió con status: ${response.status}`);
 
           console.log('========== RESPONSE COMPLETO ==========');
           console.log('Status:', response.status);
-          console.log('Headers:', JSON.stringify(response.headers, null, 2));
-          console.log('Data type:', typeof response.data);
           console.log('Data:', JSON.stringify(response.data, null, 2));
-          console.log('Data keys:', response.data ? Object.keys(response.data) : 'N/A');
           console.log('=======================================');
 
-          if (response.data && Object.keys(response.data).length > 0) {
-            logger.info(`[Membership] Response.data tiene ${Object.keys(response.data).length} propiedades`);
-          } else {
-            logger.warn(`[Membership] ⚠️ Response.data está vacío (objeto sin propiedades)`);
-          }
-          logger.info(`[Membership] ====== FIN RESPUESTA API ======`);
+          // Verificar si la API retornó success: false (usuario ya existe)
+          if (response.data && response.data.success === false) {
+            const errorMsg = response.data.error || '';
 
-          // Capturar activationUrl si viene en la respuesta (puede venir en cualquier llamado)
-          if (response.data && response.data.activationUrl) {
-            activationUrl = response.data.activationUrl;
-            membershipRecord.activation_url = activationUrl;
-            logger.info(`[Membership] ✅ activationUrl capturada: ${activationUrl}`);
-          } else if (esPrimero) {
-            logger.warn(`[Membership] ⚠️ Primera membresía NO retornó activationUrl`);
-            if (response.data) {
-              logger.warn(`[Membership] Campos disponibles en response:`, Object.keys(response.data));
+            // Si el error es "usuario ya existe", reintentar con createMembershipIfUserExists: true
+            if (errorMsg.includes('usuario ya existe') || errorMsg.includes('createMembershipIfUserExists')) {
+              logger.info(`[Membership] 🔄 Usuario ya existe, reintentando con createMembershipIfUserExists: true`);
+
+              // Modificar payload para crear solo la membresía
+              const retryPayload = {
+                ...payload,
+                createMembershipIfUserExists: true,
+                allowDuplicateMemberships: !esPrimero // Solo permitir duplicados en 2da+ membresía
+              };
+
+              console.log('========== RETRY PAYLOAD ==========');
+              console.log(JSON.stringify(retryPayload, null, 2));
+              console.log('===================================');
+
+              // Reintentar
+              const retryResponse = await axios.post(config.frapp.apiUrl, retryPayload, {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': config.frapp.apiKey
+                },
+                timeout: 15000
+              });
+
+              console.log('========== RETRY RESPONSE ==========');
+              console.log('Status:', retryResponse.status);
+              console.log('Data:', JSON.stringify(retryResponse.data, null, 2));
+              console.log('====================================');
+
+              // Capturar activationUrl del retry
+              if (retryResponse.data && retryResponse.data.activationUrl) {
+                activationUrl = retryResponse.data.activationUrl;
+                membershipRecord.activation_url = activationUrl;
+                logger.info(`[Membership] ✅ activationUrl capturada (después de retry): ${activationUrl}`);
+              }
+
+              membershipsCreadas.push({
+                nombre: configMembership.nombre,
+                planId: configMembership.membershipPlanId,
+                inicio: membershipStartDate,
+                fin: membershipExpiryDate,
+                duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
+                usaDuracion: configMembership.usarFechaInicio,
+                simulado: false,
+                responseData: retryResponse.data
+              });
+
+              logger.info(`[Membership] ✅ Membresía creada exitosamente (usuario existente)`);
+
+            } else {
+              // Otro tipo de error
+              throw new Error(`API retornó success: false - ${errorMsg}`);
             }
-          }
 
-          membershipsCreadas.push({
-            nombre: configMembership.nombre,
-            planId: configMembership.membershipPlanId,
-            inicio: membershipStartDate,
-            fin: membershipExpiryDate,
-            duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
-            usaDuracion: configMembership.usarFechaInicio,
-            simulado: false,
-            responseData: response.data
-          });
+          } else if (response.data && response.data.success === true) {
+            // Respuesta exitosa normal
+            logger.info(`[Membership] ✅ API respondió exitosamente`);
+
+            // Capturar activationUrl si viene en la respuesta
+            if (response.data.activationUrl) {
+              activationUrl = response.data.activationUrl;
+              membershipRecord.activation_url = activationUrl;
+              logger.info(`[Membership] ✅ activationUrl capturada: ${activationUrl}`);
+            } else if (esPrimero) {
+              logger.warn(`[Membership] ⚠️ Primera membresía NO retornó activationUrl`);
+            }
+
+            membershipsCreadas.push({
+              nombre: configMembership.nombre,
+              planId: configMembership.membershipPlanId,
+              inicio: membershipStartDate,
+              fin: membershipExpiryDate,
+              duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
+              usaDuracion: configMembership.usarFechaInicio,
+              simulado: false,
+              responseData: response.data
+            });
+
+          } else {
+            // Respuesta sin campo 'success' (formato inesperado)
+            logger.warn(`[Membership] ⚠️ Respuesta sin campo 'success', asumiendo éxito por status 200`);
+
+            membershipsCreadas.push({
+              nombre: configMembership.nombre,
+              planId: configMembership.membershipPlanId,
+              inicio: membershipStartDate,
+              fin: membershipExpiryDate,
+              duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
+              usaDuracion: configMembership.usarFechaInicio,
+              simulado: false,
+              responseData: response.data
+            });
+          }
 
         } else {
           throw new Error(`API respondió con código ${response.status}`);
