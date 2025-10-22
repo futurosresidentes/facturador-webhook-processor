@@ -162,15 +162,21 @@ async function processWebhook(webhookId) {
       completedStages.memberships = true;
 
       // LOG PASO 3: Membresías creadas exitosamente
-      const membershipsDetail = membershipResult.membershipsCreadas
-        .map((m, idx) => `${idx + 1}. ${m.planNombre} (Plan ID: ${m.membershipPlanId}) - ${m.duracionDias ? `${m.duracionDias} días` : `Hasta ${m.fechaFinFija}`}`)
-        .join('; ');
+      let membershipsDetail = 'N/A';
+      let membershipsCount = 0;
+
+      if (membershipResult.membershipsCreadas && Array.isArray(membershipResult.membershipsCreadas)) {
+        membershipsCount = membershipResult.membershipsCreadas.length;
+        membershipsDetail = membershipResult.membershipsCreadas
+          .map((m, idx) => `${idx + 1}. ${m.nombre} (Plan ID: ${m.planId}) - ${m.usaDuracion ? `${m.duracion} días` : `Hasta ${m.fin}`}`)
+          .join('; ');
+      }
 
       await WebhookLog.create({
         webhook_id: webhookId,
         stage: 'membership_creation',
         status: 'success',
-        details: `${membershipResult.membreshipsCreadas.length} membresía(s) creada(s) - ${membershipsDetail}${membershipResult.activationUrl ? ` | activationUrl: ${membershipResult.activationUrl}` : ''}`
+        details: `${membershipsCount} membresía(s) creada(s) - ${membershipsDetail}${membershipResult.activationUrl ? ` | activationUrl: ${membershipResult.activationUrl}` : ''}`
       });
 
     } else {
