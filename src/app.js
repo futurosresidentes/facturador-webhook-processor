@@ -47,6 +47,74 @@ app.get('/', (req, res) => {
 
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/feature-flags', featureFlagsRoutes);
+
+// Endpoint temporal para ejecutar migración (REMOVER DESPUÉS)
+app.post('/api/setup', async (req, res) => {
+  try {
+    const { sequelize } = require('./config/database');
+    const { QueryTypes } = require('sequelize');
+
+    // Verificar si la tabla ya existe
+    const tables = await sequelize.query(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'feature_flags'",
+      { type: QueryTypes.SELECT }
+    );
+
+    if (tables.length > 0) {
+      return res.json({
+        success: true,
+        message: 'La tabla feature_flags ya existe',
+        alreadyExists: true
+      });
+    }
+
+    // Crear tabla
+    await sequelize.query(`
+      CREATE TABLE feature_flags (
+        id SERIAL PRIMARY KEY,
+        key VARCHAR(255) NOT NULL UNIQUE,
+        value BOOLEAN NOT NULL DEFAULT true,
+        description TEXT,
+        updated_by VARCHAR(255),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // Crear índice único
+    await sequelize.query(`
+      CREATE UNIQUE INDEX feature_flags_key_unique ON feature_flags (key)
+    `);
+
+    // Insertar switches iniciales
+    await sequelize.query(`
+      INSERT INTO feature_flags (key, value, description, updated_by, updated_at)
+      VALUES
+        ('MEMBERSHIPS_ENABLED', false, 'Controla si se crean membresías en Frapp. false = MODO TESTING (simula), true = MODO PRODUCCIÓN (crea real)', 'migration', NOW()),
+        ('WORLDOFFICE_INVOICE_ENABLED', false, 'Controla si se crean facturas en World Office. false = MODO TESTING (simula), true = MODO PRODUCCIÓN (crea real)', 'migration', NOW()),
+        ('WORLDOFFICE_DIAN_ENABLED', false, 'Controla si se emiten facturas ante la DIAN. false = DESACTIVADO (skip), true = ACTIVADO (emite)', 'migration', NOW())
+    `);
+
+    logger.info('✅ Tabla feature_flags creada exitosamente');
+
+    res.json({
+      success: true,
+      message: 'Migración ejecutada exitosamente',
+      switches: {
+        MEMBERSHIPS_ENABLED: false,
+        WORLDOFFICE_INVOICE_ENABLED: false,
+        WORLDOFFICE_DIAN_ENABLED: false
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error ejecutando migración:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.use(errorHandler);
 
 app.use((req, res) => {
