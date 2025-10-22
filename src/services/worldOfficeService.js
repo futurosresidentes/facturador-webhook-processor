@@ -11,6 +11,7 @@ const axios = require('axios');
 const config = require('../config/env');
 const logger = require('../config/logger');
 const cityCache = require('./worldOfficeCityCache');
+const FeatureFlag = require('../models/FeatureFlag');
 
 // Configuración de axios para World Office
 const woClient = axios.create({
@@ -426,12 +427,14 @@ async function createInvoice(invoiceData) {
   try {
     const { customerId, comercialWOId, product, amount } = invoiceData;
 
-    const modoActual = config.worldOffice.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+    // Leer configuración dinámica desde BD (con fallback a .env)
+    const invoiceEnabled = await FeatureFlag.isEnabled('WORLDOFFICE_INVOICE_ENABLED', config.worldOffice.modoProduccion);
+    const modoActual = invoiceEnabled ? 'PRODUCCIÓN' : 'TESTING';
     logger.info(`[WorldOffice] Creando factura - Modo: ${modoActual}`);
     logger.info(`[WorldOffice] Cliente: ${customerId}, Comercial: ${comercialWOId}, Producto: ${product}, Monto: $${amount}`);
 
     // MODO TESTING: Simular
-    if (!config.worldOffice.modoProduccion) {
+    if (!invoiceEnabled) {
       logger.info('[WorldOffice] 🟡 MODO TESTING - Factura simulada');
 
       const inventoryConfig = getInventoryId(product);
@@ -618,11 +621,13 @@ async function createInvoice(invoiceData) {
  */
 async function accountInvoice(documentoId) {
   try {
-    const modoActual = config.worldOffice.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+    // Leer configuración dinámica desde BD (con fallback a .env)
+    const invoiceEnabled = await FeatureFlag.isEnabled('WORLDOFFICE_INVOICE_ENABLED', config.worldOffice.modoProduccion);
+    const modoActual = invoiceEnabled ? 'PRODUCCIÓN' : 'TESTING';
     logger.info(`[WorldOffice] Contabilizando documento ${documentoId} - Modo: ${modoActual}`);
 
     // MODO TESTING: Simular
-    if (!config.worldOffice.modoProduccion) {
+    if (!invoiceEnabled) {
       logger.info('[WorldOffice] 🟡 MODO TESTING - Contabilización simulada');
       return {
         documentoId,
@@ -668,9 +673,13 @@ async function accountInvoice(documentoId) {
  */
 async function emitDianInvoice(documentoId) {
   try {
+    // Leer configuración dinámica desde BD (con fallback a .env)
+    const dianEnabled = await FeatureFlag.isEnabled('WORLDOFFICE_DIAN_ENABLED', config.worldOffice.emitirDian);
+    const invoiceEnabled = await FeatureFlag.isEnabled('WORLDOFFICE_INVOICE_ENABLED', config.worldOffice.modoProduccion);
+
     // Si la emisión DIAN está desactivada, skip
-    if (!config.worldOffice.emitirDian) {
-      logger.info('[WorldOffice] 🔴 Emisión DIAN desactivada (WORLDOFFICE_EMITIR_DIAN=false)');
+    if (!dianEnabled) {
+      logger.info('[WorldOffice] 🔴 Emisión DIAN desactivada (WORLDOFFICE_DIAN_ENABLED=false)');
       return {
         documentoId,
         dianStatus: 'skipped',
@@ -679,11 +688,11 @@ async function emitDianInvoice(documentoId) {
       };
     }
 
-    const modoActual = config.worldOffice.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+    const modoActual = invoiceEnabled ? 'PRODUCCIÓN' : 'TESTING';
     logger.info(`[WorldOffice] Emitiendo factura electrónica - Documento: ${documentoId} - Modo: ${modoActual}`);
 
     // MODO TESTING: Simular
-    if (!config.worldOffice.modoProduccion) {
+    if (!invoiceEnabled) {
       logger.info('[WorldOffice] 🟡 MODO TESTING - Emisión DIAN simulada');
       return {
         documentoId,

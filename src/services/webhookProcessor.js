@@ -8,6 +8,7 @@
  */
 
 const { Webhook, WebhookLog, Contact } = require('../models');
+const FeatureFlag = require('../models/FeatureFlag');
 const fr360Service = require('./fr360Service');
 const crmService = require('./crmService');
 const membershipService = require('./membershipService');
@@ -203,12 +204,13 @@ async function processWebhook(webhookId) {
     };
 
     // Aplicar etiquetas solo en modo PRODUCCIÓN
+    const membershipsEnabled = await FeatureFlag.isEnabled('MEMBERSHIPS_ENABLED', config.frapp.modoProduccion);
     const etiquetasAplicadas = [];
     let etiquetasDetalle = 'N/A';
     let etiquetasLabel = 'Etiquetas aplicadas';
 
     if (membershipResult?.etiquetas && membershipResult.etiquetas.length > 0) {
-      if (config.frapp.modoProduccion) {
+      if (membershipsEnabled) {
         // MODO PRODUCCIÓN: Aplicar etiquetas realmente
         for (const tagId of membershipResult.etiquetas) {
           try {

@@ -6,6 +6,7 @@ const config = require('./config/env');
 const logger = require('./config/logger');
 const { testConnection, syncDatabase } = require('./config/database');
 const webhookRoutes = require('./routes/webhooks');
+const featureFlagsRoutes = require('./routes/featureFlags');
 const errorHandler = require('./middleware/errorHandler');
 
 require('./models');
@@ -38,12 +39,14 @@ app.get('/', (req, res) => {
     status: 'running',
     endpoints: {
       health: '/health',
-      webhooks: '/api/webhooks'
+      webhooks: '/api/webhooks',
+      featureFlags: '/api/feature-flags'
     }
   });
 });
 
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/feature-flags', featureFlagsRoutes);
 app.use(errorHandler);
 
 app.use((req, res) => {

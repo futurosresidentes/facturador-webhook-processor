@@ -50,8 +50,27 @@ const syncDatabase = async (force = false) => {
   }
 };
 
+// Para Sequelize CLI (migraciones)
 module.exports = {
   sequelize,
   testConnection,
-  syncDatabase
+  syncDatabase,
+  // Config para Sequelize CLI
+  development: {
+    url: config.database.url,
+    dialect: 'postgres',
+    dialectOptions: {
+      ssl: false
+    }
+  },
+  production: {
+    url: config.database.url,
+    dialect: 'postgres',
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    }
+  }
 };

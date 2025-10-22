@@ -2,6 +2,7 @@ const Webhook = require('./Webhook');
 const WebhookLog = require('./WebhookLog');
 const Contact = require('./Contact');
 const Membership = require('./Membership');
+const FeatureFlag = require('./FeatureFlag');
 
 // Define relationships
 Webhook.hasMany(WebhookLog, { foreignKey: 'webhook_id', as: 'logs' });
@@ -17,5 +18,6 @@ module.exports = {
   Webhook,
   WebhookLog,
   Contact,
-  Membership
+  Membership,
+  FeatureFlag
 };

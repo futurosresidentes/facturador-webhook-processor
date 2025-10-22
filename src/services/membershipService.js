@@ -5,6 +5,7 @@ const { getProductBase } = require('../utils/productFilter');
 const { obtenerConfiguracionMemberships } = require('../utils/promotions');
 const { addDays, formatForFR360, isValidDate } = require('../utils/dateHelpers');
 const { Membership } = require('../models');
+const FeatureFlag = require('../models/FeatureFlag');
 const notificationService = require('./notificationService');
 
 // Etiquetas para aplicar según membershipPlanId
@@ -35,7 +36,9 @@ async function createMemberships(params) {
     startTimestamp // Timestamp de inicio del paso para calcular duración
   } = params;
 
-  const modoActual = config.frapp.modoProduccion ? 'PRODUCCIÓN' : 'TESTING';
+  // Leer configuración dinámica desde BD (con fallback a .env)
+  const membershipsEnabled = await FeatureFlag.isEnabled('MEMBERSHIPS_ENABLED', config.frapp.modoProduccion);
+  const modoActual = membershipsEnabled ? 'PRODUCCIÓN' : 'TESTING';
 
   logger.info(`[Membership] Iniciando creación de membresías (Modo: ${modoActual})`);
   logger.info(`[Membership] Producto: ${product}`);
@@ -152,7 +155,7 @@ async function createMemberships(params) {
     };
 
     // 9. Llamar API o simular según modo
-    if (!config.frapp.modoProduccion) {
+    if (!membershipsEnabled) {
       // MODO TESTING: Solo simular
       logger.info(`[Membership] 🟡 MODO TESTING: Simulando petición a API`);
       logger.info(`[Membership] Payload que se enviaría:`, JSON.stringify(payload, null, 2));
@@ -253,7 +256,7 @@ async function createMemberships(params) {
     return detalle;
   }).join('\n\n');
 
-  const tituloModo = config.frapp.modoProduccion
+  const tituloModo = membershipsEnabled
     ? '✅ MEMBRESÍAS CREADAS EN PRODUCCIÓN'
     : '🟡 SIMULACIÓN: MEMBRESÍAS QUE SE CREARÍAN';
 
