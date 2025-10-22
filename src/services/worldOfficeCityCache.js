@@ -79,7 +79,12 @@ async function fetchCitiesFromAPI() {
     return [];
 
   } catch (error) {
-    logger.error('[WO-CityCache] Error consultando ciudades:', error.message);
+    // Si es un error de configuración, no es crítico (se usará Medellín por defecto)
+    if (error.code === 'ENOTFOUND' || error.message.includes('timeout')) {
+      logger.warn('[WO-CityCache] ⚠️  No se pudo conectar con World Office API (se usará Medellín por defecto)');
+    } else {
+      logger.warn('[WO-CityCache] ⚠️  Error consultando ciudades:', error.message);
+    }
     return [];
   }
 }
@@ -103,11 +108,17 @@ async function refreshCache(force = false) {
   if (cities.length > 0) {
     citiesCache = cities;
     lastFetchTime = now;
-    logger.info(`[WO-CityCache] Caché actualizado con ${cities.length} ciudades`);
+    logger.info(`[WO-CityCache] ✅ Caché actualizado con ${cities.length} ciudades`);
     return true;
   }
 
-  logger.warn('[WO-CityCache] No se pudo actualizar el caché');
+  // Si ya tenemos un caché previo, mantenerlo
+  if (citiesCache.length > 0) {
+    logger.debug('[WO-CityCache] No se pudo actualizar, pero se mantiene caché previo');
+    return true;
+  }
+
+  logger.debug('[WO-CityCache] Caché vacío (se usará Medellín por defecto)');
   return false;
 }
 
@@ -194,9 +205,10 @@ function getCacheInfo() {
 }
 
 // Inicializar caché al cargar el módulo (después de un pequeño delay para que logger esté listo)
+// Los errores de inicialización no son críticos, se usa Medellín por defecto
 setTimeout(() => {
   refreshCache().catch(err => {
-    logger.error('[WO-CityCache] Error en inicialización automática:', err);
+    logger.debug('[WO-CityCache] Inicialización automática sin éxito (normal si WO API no está disponible)');
   });
 }, 100);
 
