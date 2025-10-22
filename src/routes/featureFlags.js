@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const FeatureFlag = require('../models/FeatureFlag');
 const logger = require('../config/logger');
+const apiKeyAuth = require('../middleware/apiKeyAuth');
 
 /**
  * GET /api/feature-flags
@@ -80,10 +81,11 @@ router.get('/:key', async (req, res) => {
 
 /**
  * PUT /api/feature-flags/:key
- * Actualizar un feature flag
+ * Actualizar un feature flag (REQUIERE API KEY)
+ * Headers: Authorization: Bearer YOUR_API_KEY
  * Body: { value: true/false, updated_by: "nombre" }
  */
-router.put('/:key', async (req, res) => {
+router.put('/:key', apiKeyAuth, async (req, res) => {
   try {
     const { key } = req.params;
     const { value, updated_by } = req.body;
@@ -122,9 +124,10 @@ router.put('/:key', async (req, res) => {
 
 /**
  * POST /api/feature-flags/invalidate-cache
- * Invalidar cache de feature flags (forzar recarga)
+ * Invalidar cache de feature flags (forzar recarga) - REQUIERE API KEY
+ * Headers: Authorization: Bearer YOUR_API_KEY
  */
-router.post('/invalidate-cache', async (req, res) => {
+router.post('/invalidate-cache', apiKeyAuth, async (req, res) => {
   try {
     FeatureFlag.invalidateCache();
 

@@ -41,22 +41,26 @@ node toggle-switch.js WORLDOFFICE_DIAN_ENABLED on "Admin"
 
 **Nota**: El tercer parámetro es opcional (nombre de quién hace el cambio).
 
-### Opción 2: API REST
+### Opción 2: API REST (Requiere API Key)
 
 ```bash
-# Listar todos los switches
+# Listar todos los switches (NO requiere API key)
 curl https://facturador-webhook-processor.onrender.com/api/feature-flags
 
-# Activar un switch
+# Activar un switch (REQUIERE API KEY)
 curl -X PUT https://facturador-webhook-processor.onrender.com/api/feature-flags/MEMBERSHIPS_ENABLED \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"value": true, "updated_by": "Juan"}'
 
-# Desactivar un switch
+# Desactivar un switch (REQUIERE API KEY)
 curl -X PUT https://facturador-webhook-processor.onrender.com/api/feature-flags/WORLDOFFICE_INVOICE_ENABLED \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"value": false, "updated_by": "Maria"}'
 ```
+
+**Nota**: La API Key se configura en la variable de entorno `API_KEY` en Render.
 
 ---
 

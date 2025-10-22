@@ -8,8 +8,10 @@
  */
 
 const axios = require('axios');
+require('dotenv').config();
 
 const API_URL = process.env.API_URL || 'https://facturador-webhook-processor.onrender.com';
+const API_KEY = process.env.API_KEY;
 
 const SWITCHES = {
   'MEMBERSHIPS_ENABLED': 'Creación de membresías en Frapp',
@@ -66,6 +68,10 @@ async function toggleSwitch(key, value, updatedBy) {
     const response = await axios.put(`${API_URL}/api/feature-flags/${key}`, {
       value: boolValue,
       updated_by: updatedBy || 'CLI'
+    }, {
+      headers: API_KEY ? {
+        'Authorization': `Bearer ${API_KEY}`
+      } : {}
     });
 
     if (response.data.success) {
