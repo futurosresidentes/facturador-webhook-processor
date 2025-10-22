@@ -112,13 +112,31 @@ async function retryOperation(operation, operationName, maxRetries = config.worl
       lastError = error;
       const isLastAttempt = attempt === maxRetries;
 
+      // Detectar errores NO recuperables (no tiene sentido reintentar)
+      const isNonRecoverableError =
+        error.response?.status === 404 ||  // Not found - definitivo
+        error.response?.status === 400 ||  // Bad request - payload inválido
+        error.response?.status === 401 ||  // Unauthorized - credenciales inválidas
+        error.response?.status === 403;    // Forbidden - sin permisos
+
       // Log del error
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         logger.warn(`[WorldOffice] ⏱️ Timeout en ${operationName} - Intento ${attempt}/${maxRetries}`);
       } else if (error.response) {
         logger.warn(`[WorldOffice] ❌ Error ${error.response.status} en ${operationName} - Intento ${attempt}/${maxRetries}`);
+
+        // Si es 404, mostrar mensaje específico
+        if (error.response.status === 404) {
+          logger.info(`[WorldOffice] 🔍 Recurso no encontrado (404) - No se reintentará`);
+        }
       } else {
         logger.warn(`[WorldOffice] ❌ Error en ${operationName}: ${error.message} - Intento ${attempt}/${maxRetries}`);
+      }
+
+      // Si es un error NO recuperable, lanzarlo inmediatamente sin reintentar
+      if (isNonRecoverableError) {
+        logger.info(`[WorldOffice] ⚠️ Error no recuperable detectado - Finalizando reintentos`);
+        throw error;
       }
 
       // Si no es el último intento, esperar antes de reintentar
