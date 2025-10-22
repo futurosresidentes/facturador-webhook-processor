@@ -180,6 +180,7 @@ async function createMemberships(params) {
     } else {
       // MODO PRODUCCIÓN: Llamar API real
       logger.info(`[Membership] 🟢 MODO PRODUCCIÓN: Enviando a API`);
+      logger.info(`[Membership] Payload enviado:`, JSON.stringify(payload, null, 2));
 
       try {
         const response = await axios.post(config.frapp.apiUrl, payload, {
@@ -192,10 +193,15 @@ async function createMemberships(params) {
 
         if (response.status >= 200 && response.status < 300) {
           logger.info(`[Membership] API respondió exitosamente: ${response.status}`);
+          logger.info(`[Membership] Respuesta completa de API:`, JSON.stringify(response.data, null, 2));
 
-          if (esPrimero && response.data && response.data.activationUrl) {
+          // Capturar activationUrl si viene en la respuesta (puede venir en cualquier llamado)
+          if (response.data && response.data.activationUrl) {
             activationUrl = response.data.activationUrl;
             membershipRecord.activation_url = activationUrl;
+            logger.info(`[Membership] ✅ activationUrl capturada: ${activationUrl}`);
+          } else if (esPrimero) {
+            logger.warn(`[Membership] ⚠️ Primera membresía NO retornó activationUrl. Response data:`, response.data);
           }
 
           membershipsCreadas.push({
