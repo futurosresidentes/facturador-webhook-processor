@@ -12,6 +12,7 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 const cityCache = require('./worldOfficeCityCache');
 const FeatureFlag = require('../models/FeatureFlag');
+const { getColombiaDateString } = require('../utils/dateUtils');
 
 // Configuración de axios para World Office
 const woClient = axios.create({
@@ -508,7 +509,7 @@ async function createInvoice(invoiceData) {
     logger.info('[WorldOffice] 🟢 MODO PRODUCCIÓN - Creando factura real');
 
     const inventoryConfig = getInventoryId(product);
-    const fecha = new Date().toISOString().split('T')[0];
+    const fecha = getColombiaDateString(); // Fecha en zona horaria de Colombia (UTC-5)
 
     const payload = {
       fecha,

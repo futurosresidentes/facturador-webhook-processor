@@ -1,6 +1,7 @@
 const axios = require('axios');
 const config = require('../config/env');
 const logger = require('../config/logger');
+const { toColombiaISO } = require('../utils/dateUtils');
 
 /**
  * Sistema de reintentos para notificaciones de Google Chat
@@ -219,7 +220,7 @@ async function notifySuccess(data) {
     const seconds = (data.processingTimeMs / 1000).toFixed(2);
     messageParts.push(`• Tiempo de procesamiento: ${seconds}s`);
   }
-  messageParts.push(`• Timestamp: ${new Date().toISOString()}`);
+  messageParts.push(`• Timestamp: ${toColombiaISO()}`);
 
   const message = messageParts.join('\n');
   await sendToGoogleChat(config.googleChat.successWebhook, message);
@@ -235,7 +236,7 @@ async function notifyError(data) {
     `Webhook Ref: ${data.webhookRef || 'N/A'}`,
     `Invoice ID: ${data.invoiceId || 'N/A'}`,
     `Error: ${data.error}`,
-    `Timestamp: ${new Date().toISOString()}`
+    `Timestamp: ${toColombiaISO()}`
   ].join('\n');
 
   await sendToGoogleChat(config.googleChat.errorWebhook, message);
@@ -250,7 +251,7 @@ async function notifyCRMError(title, details) {
   const message = [
     `⚠️ *${title}*\n`,
     ...Object.entries(details).map(([key, value]) => `${key}: ${value}`),
-    `Timestamp: ${new Date().toISOString()}`
+    `Timestamp: ${toColombiaISO()}`
   ].join('\n');
 
   await sendToGoogleChat(config.googleChat.crmErrorWebhook, message);
@@ -265,7 +266,7 @@ async function notifyFrapp(title, details) {
   const message = [
     `🎯 *${title}*\n`,
     ...Object.entries(details).map(([key, value]) => `${key}: ${value}`),
-    `Timestamp: ${new Date().toISOString()}`
+    `Timestamp: ${toColombiaISO()}`
   ].join('\n');
 
   await sendToGoogleChat(config.googleChat.frappWebhook, message);
@@ -318,8 +319,8 @@ async function notifyStep(step, title, data = {}, durationMs = null) {
 
   messageParts.push('');
 
-  // Agregar timestamp con duración si está disponible
-  const timestamp = new Date().toISOString();
+  // Agregar timestamp con duración si está disponible (hora de Colombia)
+  const timestamp = toColombiaISO();
   if (durationMs !== null) {
     const durationSeconds = (durationMs / 1000).toFixed(2);
     messageParts.push(`⏱️ ${timestamp} (${durationSeconds}s)`);
