@@ -546,11 +546,13 @@ async function getRecentWebhooks(req, res) {
           model: WebhookLog,
           as: 'logs',
           attributes: ['id', 'stage', 'status', 'message', 'created_at'],
-          separate: true,
-          order: [['created_at', 'ASC']]
+          required: false // LEFT JOIN para incluir webhooks sin logs
         }
       ],
-      order: [['created_at', 'DESC']],
+      order: [
+        ['created_at', 'DESC'],
+        [{ model: WebhookLog, as: 'logs' }, 'created_at', 'ASC']
+      ],
       attributes: [
         'id',
         'ref_payco',
@@ -576,7 +578,9 @@ async function getRecentWebhooks(req, res) {
       queryOptions.limit = limit;
     }
 
+    logger.info(`[Controller] Buscando webhooks con limit: ${limit || 'all'}`);
     const webhooks = await Webhook.findAll(queryOptions);
+    logger.info(`[Controller] Encontrados ${webhooks.length} webhooks`);
 
     // Formatear respuesta
     const formattedWebhooks = webhooks.map(webhook => {
@@ -641,9 +645,12 @@ async function getRecentWebhooks(req, res) {
 
   } catch (error) {
     logger.error('[Controller] Error obteniendo webhooks recientes:', error);
+    logger.error('[Controller] Stack trace:', error.stack);
+    logger.error('[Controller] Error message:', error.message);
     res.status(500).json({
       success: false,
-      error: 'Error obteniendo webhooks'
+      error: 'Error obteniendo webhooks',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }
