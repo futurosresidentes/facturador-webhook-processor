@@ -112,8 +112,27 @@ async function createMemberships(params) {
       logger.info(`[Membership] Start: ${membershipStartDate} | Duration: ${membershipDurationDays} días | Expiry: ${membershipExpiryDate}`);
     } else {
       // Usar fechas fijas (inicio y fin)
-      // Si hay fechaInicioFija, usarla; si no, usar fecha de hoy
-      const fechaInicio = configMembership.fechaInicioFija ? configMembership.fechaInicioFija : new Date();
+      // Si hay fechaInicioFija, validar que no sea anterior a hoy
+      let fechaInicio;
+      const ahora = new Date();
+
+      if (configMembership.fechaInicioFija) {
+        const fechaInicioConfig = new Date(configMembership.fechaInicioFija);
+
+        if (fechaInicioConfig < ahora) {
+          // Fecha de inicio configurada ya pasó, usar hoy
+          fechaInicio = ahora;
+          logger.warn(`[Membership] ⚠️ fechaInicioFija (${fechaInicioConfig.toISOString()}) es anterior a hoy. Usando fecha actual como inicio.`);
+        } else {
+          // Fecha de inicio configurada es futura, usarla
+          fechaInicio = fechaInicioConfig;
+          logger.info(`[Membership] ✅ Usando fechaInicioFija: ${fechaInicioConfig.toISOString()}`);
+        }
+      } else {
+        // No hay fechaInicioFija, usar hoy
+        fechaInicio = ahora;
+      }
+
       membershipStartDate = formatForFR360(fechaInicio);
       membershipExpiryDate = formatForFR360(configMembership.fechaFinFija);
 
