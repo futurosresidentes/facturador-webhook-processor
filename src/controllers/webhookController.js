@@ -530,6 +530,121 @@ async function updateWebhookStatus(req, res) {
   }
 }
 
+/**
+ * Lista los webhooks más recientes con sus logs
+ * Query params: ?limit=10 (default: todos)
+ * NO requiere autenticación (lectura pública)
+ */
+async function getRecentWebhooks(req, res) {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+
+    // Query options
+    const queryOptions = {
+      include: [
+        {
+          model: WebhookLog,
+          as: 'logs',
+          attributes: ['id', 'stage', 'status', 'message', 'created_at'],
+          separate: true,
+          order: [['created_at', 'ASC']]
+        }
+      ],
+      order: [['created_at', 'DESC']],
+      attributes: [
+        'id',
+        'ref_payco',
+        'transaction_id',
+        'invoice_id',
+        'customer_email',
+        'customer_name',
+        'product',
+        'amount',
+        'currency',
+        'response',
+        'status',
+        'current_stage',
+        'last_completed_stage',
+        'error_message',
+        'created_at',
+        'updated_at'
+      ]
+    };
+
+    // Si hay limit, agregarlo
+    if (limit) {
+      queryOptions.limit = limit;
+    }
+
+    const webhooks = await Webhook.findAll(queryOptions);
+
+    // Formatear respuesta
+    const formattedWebhooks = webhooks.map(webhook => {
+      const webhookData = webhook.toJSON();
+
+      // Agrupar logs por estado
+      const logsByStatus = {
+        success: [],
+        error: [],
+        info: []
+      };
+
+      webhookData.logs.forEach(log => {
+        if (logsByStatus[log.status]) {
+          logsByStatus[log.status].push({
+            stage: log.stage,
+            message: log.message,
+            timestamp: log.created_at
+          });
+        }
+      });
+
+      return {
+        id: webhookData.id,
+        ref_payco: webhookData.ref_payco,
+        invoice_id: webhookData.invoice_id,
+        customer: {
+          email: webhookData.customer_email,
+          name: webhookData.customer_name
+        },
+        product: webhookData.product,
+        amount: webhookData.amount,
+        currency: webhookData.currency,
+        response: webhookData.response,
+        status: webhookData.status,
+        current_stage: webhookData.current_stage,
+        last_completed_stage: webhookData.last_completed_stage,
+        error_message: webhookData.error_message,
+        created_at: webhookData.created_at,
+        updated_at: webhookData.updated_at,
+        logs: {
+          total: webhookData.logs.length,
+          by_status: {
+            success: logsByStatus.success,
+            error: logsByStatus.error,
+            info: logsByStatus.info
+          },
+          all: webhookData.logs
+        }
+      };
+    });
+
+    res.json({
+      success: true,
+      count: formattedWebhooks.length,
+      limit: limit || 'all',
+      webhooks: formattedWebhooks
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error obteniendo webhooks recientes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo webhooks'
+    });
+  }
+}
+
 module.exports = {
   receiveWebhook,
   reprocessWebhook,
@@ -539,5 +654,6 @@ module.exports = {
   getWebhookStats,
   getIncompleteWebhooks,
   getWebhooksByStage,
-  updateWebhookStatus
+  updateWebhookStatus,
+  getRecentWebhooks
 };

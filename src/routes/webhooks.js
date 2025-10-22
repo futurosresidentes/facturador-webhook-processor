@@ -11,6 +11,14 @@ const authenticate = require('../middleware/authenticate');
 router.post('/', validateWebhook, webhookController.receiveWebhook);
 
 /**
+ * GET /api/webhooks/recent
+ * Lista webhooks recientes con sus logs (sin autenticación)
+ * Query params: ?limit=10 (opcional, default: todos)
+ * Retorna webhooks ordenados por fecha (más recientes primero) con logs agrupados
+ */
+router.get('/recent', webhookController.getRecentWebhooks);
+
+/**
  * GET /api/webhooks/stats
  * Obtiene estadísticas generales de webhooks
  * Requiere: Authorization: Bearer <token>
