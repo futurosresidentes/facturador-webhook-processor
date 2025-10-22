@@ -101,4 +101,12 @@ router.delete('/keep-last', authenticate, webhookController.keepOnlyLastSuccessf
  */
 router.patch('/:id/status', authenticate, webhookController.updateWebhookStatus);
 
+/**
+ * PATCH /api/webhooks/:id
+ * Edita campos de un webhook existente
+ * Body: { product, customer_email, customer_name, etc. }
+ * Requiere: Authorization: Bearer <token>
+ */
+router.patch('/:id', authenticate, webhookController.editWebhook);
+
 module.exports = router;

@@ -389,6 +389,96 @@ async function keepOnlyLastSuccessful(req, res) {
 }
 
 /**
+ * Edita un webhook por ID
+ * Permite actualizar cualquier campo del webhook
+ */
+async function editWebhook(req, res) {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    logger.info(`[Controller] Editando webhook ${id}`);
+
+    // Buscar webhook
+    const webhook = await Webhook.findByPk(id);
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    // Campos editables
+    const allowedFields = [
+      'ref_payco',
+      'transaction_id',
+      'invoice_id',
+      'customer_email',
+      'customer_name',
+      'customer_city',
+      'customer_address',
+      'product',
+      'amount',
+      'currency',
+      'response',
+      'status',
+      'current_stage',
+      'last_completed_stage'
+    ];
+
+    // Filtrar solo campos permitidos
+    const fieldsToUpdate = {};
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        fieldsToUpdate[field] = updates[field];
+      }
+    }
+
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No se proporcionaron campos válidos para actualizar',
+        allowed_fields: allowedFields
+      });
+    }
+
+    // Aplicar normalización de producto si se está actualizando
+    if (fieldsToUpdate.product) {
+      fieldsToUpdate.product = normalizeProductName(fieldsToUpdate.product);
+    }
+
+    // Actualizar webhook
+    await webhook.update(fieldsToUpdate);
+
+    logger.info(`[Controller] Webhook ${id} actualizado. Campos: ${Object.keys(fieldsToUpdate).join(', ')}`);
+
+    // Obtener webhook actualizado con logs
+    const updatedWebhook = await Webhook.findByPk(id, {
+      include: [{
+        model: WebhookLog,
+        as: 'logs',
+        attributes: ['id', 'stage', 'status', 'details', 'created_at']
+      }]
+    });
+
+    res.json({
+      success: true,
+      message: 'Webhook actualizado exitosamente',
+      updated_fields: Object.keys(fieldsToUpdate),
+      webhook: updatedWebhook
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error editando webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * Obtiene un webhook por ID
  */
 async function getWebhook(req, res) {
@@ -906,6 +996,7 @@ module.exports = {
   cleanDuplicateLogs,
   deleteAllLogs,
   keepOnlyLastSuccessful,
+  editWebhook,
   getWebhook,
   listWebhooks,
   getWebhookLogs,
