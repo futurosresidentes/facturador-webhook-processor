@@ -235,11 +235,18 @@ async function createMemberships(params) {
               console.log('Data:', JSON.stringify(retryResponse.data, null, 2));
               console.log('====================================');
 
-              // Capturar activationUrl del retry
-              if (retryResponse.data && retryResponse.data.activationUrl) {
-                activationUrl = retryResponse.data.activationUrl;
+              // Capturar activationUrl del retry (check both formats)
+              const retryUrlOld = retryResponse.data?.activationUrl;
+              const retryUrlNew = retryResponse.data?.data?.activation?.activationUrl;
+              const retryFoundUrl = retryUrlNew || retryUrlOld;
+
+              if (retryFoundUrl) {
+                activationUrl = retryFoundUrl;
                 membershipRecord.activation_url = activationUrl;
                 logger.info(`[Membership] ✅ activationUrl capturada (después de retry): ${activationUrl}`);
+              } else {
+                logger.warn(`[Membership] ⚠️ Retry NO retornó activationUrl`);
+                logger.warn(`[Membership] Retry response structure:`, JSON.stringify(retryResponse.data, null, 2));
               }
 
               membershipsCreadas.push({
@@ -265,12 +272,20 @@ async function createMemberships(params) {
             logger.info(`[Membership] ✅ API respondió exitosamente`);
 
             // Capturar activationUrl si viene en la respuesta
-            if (response.data.activationUrl) {
-              activationUrl = response.data.activationUrl;
+            // La estructura puede ser:
+            // - response.data.activationUrl (formato antiguo)
+            // - response.data.data.activation.activationUrl (formato nuevo)
+            const urlFromOldFormat = response.data.activationUrl;
+            const urlFromNewFormat = response.data.data?.activation?.activationUrl;
+            const foundUrl = urlFromNewFormat || urlFromOldFormat;
+
+            if (foundUrl) {
+              activationUrl = foundUrl;
               membershipRecord.activation_url = activationUrl;
               logger.info(`[Membership] ✅ activationUrl capturada: ${activationUrl}`);
             } else if (esPrimero) {
               logger.warn(`[Membership] ⚠️ Primera membresía NO retornó activationUrl`);
+              logger.warn(`[Membership] Response structure:`, JSON.stringify(response.data, null, 2));
             }
 
             membershipsCreadas.push({
