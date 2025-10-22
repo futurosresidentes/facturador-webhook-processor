@@ -1,4 +1,5 @@
 const { Webhook, WebhookLog } = require('../models');
+const { Op } = require('sequelize');
 const webhookProcessor = require('../services/webhookProcessor');
 const logger = require('../config/logger');
 
@@ -145,6 +146,86 @@ async function reprocessWebhook(req, res) {
 
   } catch (error) {
     logger.error('[Controller] Error reprocesando webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Limpia logs duplicados de un webhook completado
+ * Mantiene solo los logs del último procesamiento exitoso
+ */
+async function cleanDuplicateLogs(req, res) {
+  try {
+    const { id } = req.params;
+
+    logger.info(`[Controller] Limpiando logs duplicados del webhook ${id}`);
+
+    const webhook = await Webhook.findByPk(id);
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    // Solo limpiar webhooks completados
+    if (webhook.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Solo se pueden limpiar logs de webhooks completados'
+      });
+    }
+
+    // Obtener todos los logs del webhook
+    const allLogs = await WebhookLog.findAll({
+      where: { webhook_id: id },
+      order: [['created_at', 'DESC']]
+    });
+
+    if (allLogs.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No hay logs para limpiar',
+        deleted: 0
+      });
+    }
+
+    // Encontrar el último "started" (inicio del último procesamiento)
+    const lastStartedIndex = allLogs.findIndex(log => log.stage === 'started');
+
+    if (lastStartedIndex === -1) {
+      return res.status(400).json({
+        success: false,
+        error: 'No se encontró inicio de procesamiento'
+      });
+    }
+
+    // Los logs del último procesamiento son desde el inicio hasta el final
+    const logsToKeep = allLogs.slice(0, lastStartedIndex + 1).map(log => log.id);
+
+    // Borrar todos los logs EXCEPTO los del último procesamiento
+    const deletedCount = await WebhookLog.destroy({
+      where: {
+        webhook_id: id,
+        id: { [Op.notIn]: logsToKeep }
+      }
+    });
+
+    logger.info(`[Controller] Eliminados ${deletedCount} logs duplicados del webhook ${id}. Mantenidos: ${logsToKeep.length}`);
+
+    res.json({
+      success: true,
+      message: `Logs duplicados eliminados exitosamente`,
+      deleted: deletedCount,
+      kept: logsToKeep.length
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error limpiando logs duplicados:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -667,6 +748,7 @@ async function getRecentWebhooks(req, res) {
 module.exports = {
   receiveWebhook,
   reprocessWebhook,
+  cleanDuplicateLogs,
   getWebhook,
   listWebhooks,
   getWebhookLogs,

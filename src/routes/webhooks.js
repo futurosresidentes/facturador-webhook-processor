@@ -71,6 +71,13 @@ router.get('/:id', authenticate, webhookController.getWebhook);
 router.post('/:id/reprocess', authenticate, webhookController.reprocessWebhook);
 
 /**
+ * POST /api/webhooks/:id/clean-logs
+ * Limpia logs duplicados de un webhook completado (mantiene solo el último procesamiento)
+ * Requiere: Authorization: Bearer <token>
+ */
+router.post('/:id/clean-logs', authenticate, webhookController.cleanDuplicateLogs);
+
+/**
  * PATCH /api/webhooks/:id/status
  * Actualiza manualmente el estado de un webhook
  * Body: { status, current_stage, last_completed_stage }
