@@ -339,11 +339,14 @@ async function processWebhook(webhookId) {
     completedStages.worldoffice_customer = true;
 
     // LOG PASO 5: Cliente World Office gestionado
+    const customerActionText = woCustomerResult.action === 'created' ? 'creado' :
+                                woCustomerResult.action === 'updated' ? 'actualizado' : 'encontrado';
+
     await WebhookLog.create({
       webhook_id: webhookId,
       stage: 'worldoffice_customer',
       status: 'success',
-      details: `Cliente ${woCustomerResult.action === 'created' ? 'creado' : 'encontrado'} en World Office - ID: ${woCustomerResult.customerId}, Cédula: ${paymentLinkData.identityDocument}, Ciudad: ${woCustomerResult.customerData?.cityName || 'N/A'} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'}), Comercial WO ID: ${woCustomerResult.comercialWOId}`,
+      details: `Cliente ${customerActionText} en World Office - ID: ${woCustomerResult.customerId}, Cédula: ${paymentLinkData.identityDocument}, Ciudad: ${woCustomerResult.customerData?.cityName || 'N/A'} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'}), Comercial WO ID: ${woCustomerResult.comercialWOId}`,
       request_payload: {
         identityDocument: paymentLinkData.identityDocument,
         givenName: paymentLinkData.givenName,
@@ -371,8 +374,10 @@ async function processWebhook(webhookId) {
     let actionText = '❓ Acción desconocida';
     if (woCustomerResult.action === 'created') {
       actionText = '🆕 Cliente creado en WO';
+    } else if (woCustomerResult.action === 'updated') {
+      actionText = '🔄 Cliente actualizado en WO';
     } else if (woCustomerResult.action === 'found') {
-      actionText = '✅ Cliente ya existe en WO';
+      actionText = '✅ Cliente encontrado en WO (sin actualizar)';
     }
 
     await notificationService.notifyStep(5, 'GESTIÓN CLIENTE WORLD OFFICE', {

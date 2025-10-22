@@ -319,7 +319,7 @@ async function findOrUpdateCustomer(customerData) {
       if (searchResponse.data?.status === 'OK' && searchResponse.data?.data?.id) {
         idWO = searchResponse.data.data.id;
         action = 'found';
-        logger.info(`[WorldOffice] Cliente encontrado - ID: ${idWO}`);
+        logger.info(`[WorldOffice] Cliente encontrado - ID: ${idWO}, forzando actualización de datos`);
       }
     } catch (searchError) {
       if (searchError.response?.data?.status === 'NOT_FOUND') {
@@ -329,13 +329,52 @@ async function findOrUpdateCustomer(customerData) {
       }
     }
 
-    // PASO 3: Si no existe, crear cliente nuevo
+    // Preparar nombres y apellidos (necesario para creación Y actualización)
+    const nombres = splitNames(customerData.givenName);
+    const apellidos = splitNames(customerData.familyName);
+
+    // PASO 3A: Si existe, actualizar cliente (forzar actualización de datos)
+    if (idWO) {
+      logger.info(`[WorldOffice] Actualizando datos del cliente ID: ${idWO}`);
+
+      const updatePayload = {
+        id: idWO,
+        idTerceroTipoIdentificacion: 3, // 3 = Cédula de Ciudadanía
+        identificacion: customerData.identityDocument,
+        primerNombre: nombres.primerNombre,
+        segundoNombre: nombres.segundoNombre,
+        primerApellido: apellidos.primerNombre,
+        segundoApellido: apellidos.segundoNombre,
+        idCiudad: cityId,
+        direccion: customerData.address || 'N/A',
+        telefono: customerData.phone || '',
+        email: customerData.email,
+        idClasificacionImpuestos: 1,
+        idTerceroTipoContribuyente: 6,
+        plazoDias: 1,
+        idTerceroTipos: [4], // 4 = Cliente
+        responsabilidadFiscal: [5, 7]
+      };
+
+      logger.info('[WorldOffice] Payload de actualización:', JSON.stringify(updatePayload, null, 2));
+
+      const updateResponse = await retryOperation(
+        () => woClient.put('/api/v1/terceros/editarTercero', updatePayload),
+        `Actualización de cliente (${customerData.identityDocument})`
+      );
+
+      if (updateResponse.data?.status === 'OK') {
+        action = 'updated';
+        logger.info(`[WorldOffice] Cliente actualizado exitosamente - ID: ${idWO}`);
+      } else {
+        logger.warn(`[WorldOffice] Actualización completada con respuesta: ${JSON.stringify(updateResponse.data)}`);
+        action = 'updated';
+      }
+    }
+
+    // PASO 3B: Si no existe, crear cliente nuevo
     if (!idWO) {
       logger.info('[WorldOffice] Creando nuevo cliente en World Office');
-
-      // Separar nombres y apellidos
-      const nombres = splitNames(customerData.givenName);
-      const apellidos = splitNames(customerData.familyName);
 
       const payload = {
         idTerceroTipoIdentificacion: 3, // 3 = Cédula de Ciudadanía
