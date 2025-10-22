@@ -78,6 +78,14 @@ router.post('/:id/reprocess', authenticate, webhookController.reprocessWebhook);
 router.post('/:id/clean-logs', authenticate, webhookController.cleanDuplicateLogs);
 
 /**
+ * DELETE /api/webhooks/logs/all
+ * ⚠️ PELIGROSO: Borra TODOS los logs de la base de datos (inicio fresco)
+ * Requiere: Authorization: Bearer <token> + ?confirmation=yes
+ * Mantiene los webhooks pero borra todos sus logs
+ */
+router.delete('/logs/all', authenticate, webhookController.deleteAllLogs);
+
+/**
  * PATCH /api/webhooks/:id/status
  * Actualiza manualmente el estado de un webhook
  * Body: { status, current_stage, last_completed_stage }

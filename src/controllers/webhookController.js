@@ -234,6 +234,60 @@ async function cleanDuplicateLogs(req, res) {
 }
 
 /**
+ * Borra TODOS los logs de la base de datos (inicio fresco)
+ * ADVERTENCIA: Esta operación NO se puede deshacer
+ * Mantiene los registros de webhooks pero borra todos sus logs
+ */
+async function deleteAllLogs(req, res) {
+  try {
+    logger.warn(`[Controller] ⚠️ SOLICITANDO BORRADO DE TODOS LOS LOGS`);
+
+    // Contar logs antes de borrar
+    const totalLogs = await WebhookLog.count();
+
+    if (totalLogs === 0) {
+      return res.json({
+        success: true,
+        message: 'No hay logs para borrar',
+        deleted: 0
+      });
+    }
+
+    // Confirmar que realmente quiere borrar (requiere query param confirmation=yes)
+    if (req.query.confirmation !== 'yes') {
+      return res.status(400).json({
+        success: false,
+        error: 'Para borrar TODOS los logs, debe incluir ?confirmation=yes',
+        warning: `Hay ${totalLogs} logs que serán borrados permanentemente`,
+        tip: 'Ejemplo: DELETE /api/webhooks/logs/all?confirmation=yes'
+      });
+    }
+
+    // BORRAR TODOS LOS LOGS
+    const deletedCount = await WebhookLog.destroy({
+      where: {},  // Sin condiciones = borrar todo
+      truncate: false  // No truncar, solo borrar (mantiene secuencias)
+    });
+
+    logger.warn(`[Controller] 🗑️ BORRADOS ${deletedCount} logs de la base de datos`);
+
+    res.json({
+      success: true,
+      message: `Todos los logs han sido borrados exitosamente`,
+      deleted: deletedCount,
+      note: 'Los registros de webhooks se mantienen intactos'
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error borrando todos los logs:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * Obtiene un webhook por ID
  */
 async function getWebhook(req, res) {
@@ -749,6 +803,7 @@ module.exports = {
   receiveWebhook,
   reprocessWebhook,
   cleanDuplicateLogs,
+  deleteAllLogs,
   getWebhook,
   listWebhooks,
   getWebhookLogs,
