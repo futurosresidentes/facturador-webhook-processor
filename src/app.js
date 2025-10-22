@@ -54,56 +54,103 @@ app.post('/api/setup', async (req, res) => {
     const { sequelize } = require('./config/database');
     const { QueryTypes } = require('sequelize');
 
+    let tableCreated = false;
+    let switchesInserted = 0;
+
     // Verificar si la tabla ya existe
     const tables = await sequelize.query(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'feature_flags'",
       { type: QueryTypes.SELECT }
     );
 
-    if (tables.length > 0) {
+    // Si la tabla NO existe, crearla
+    if (tables.length === 0) {
+      // Crear tabla
+      await sequelize.query(`
+        CREATE TABLE feature_flags (
+          id SERIAL PRIMARY KEY,
+          key VARCHAR(255) NOT NULL,
+          value BOOLEAN NOT NULL DEFAULT true,
+          description TEXT,
+          updated_by VARCHAR(255),
+          updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      // Crear índice único
+      await sequelize.query(`
+        CREATE UNIQUE INDEX feature_flags_key_unique ON feature_flags (key)
+      `);
+
+      tableCreated = true;
+      logger.info('✅ Tabla feature_flags creada');
+    }
+
+    // Verificar cuántos switches existen
+    const existingFlags = await sequelize.query(
+      "SELECT key FROM feature_flags",
+      { type: QueryTypes.SELECT }
+    );
+
+    const existingKeys = existingFlags.map(f => f.key);
+    const requiredSwitches = [
+      {
+        key: 'MEMBERSHIPS_ENABLED',
+        value: false,
+        description: 'Controla si se crean membresías en Frapp. false = MODO TESTING (simula), true = MODO PRODUCCIÓN (crea real)',
+        updated_by: 'migration'
+      },
+      {
+        key: 'WORLDOFFICE_INVOICE_ENABLED',
+        value: false,
+        description: 'Controla si se crean facturas en World Office. false = MODO TESTING (simula), true = MODO PRODUCCIÓN (crea real)',
+        updated_by: 'migration'
+      },
+      {
+        key: 'WORLDOFFICE_DIAN_ENABLED',
+        value: false,
+        description: 'Controla si se emiten facturas ante la DIAN. false = DESACTIVADO (skip), true = ACTIVADO (emite)',
+        updated_by: 'migration'
+      }
+    ];
+
+    // Insertar switches que no existan
+    for (const sw of requiredSwitches) {
+      if (!existingKeys.includes(sw.key)) {
+        await sequelize.query(`
+          INSERT INTO feature_flags (key, value, description, updated_by, updated_at)
+          VALUES (:key, :value, :description, :updated_by, NOW())
+        `, {
+          replacements: sw,
+          type: QueryTypes.INSERT
+        });
+        switchesInserted++;
+        logger.info(`✅ Switch ${sw.key} insertado`);
+      }
+    }
+
+    if (tableCreated || switchesInserted > 0) {
       return res.json({
         success: true,
-        message: 'La tabla feature_flags ya existe',
-        alreadyExists: true
+        message: tableCreated
+          ? 'Tabla creada y switches insertados exitosamente'
+          : `${switchesInserted} switch(es) insertado(s) exitosamente`,
+        tableCreated,
+        switchesInserted,
+        switches: {
+          MEMBERSHIPS_ENABLED: false,
+          WORLDOFFICE_INVOICE_ENABLED: false,
+          WORLDOFFICE_DIAN_ENABLED: false
+        }
       });
     }
 
-    // Crear tabla
-    await sequelize.query(`
-      CREATE TABLE feature_flags (
-        id SERIAL PRIMARY KEY,
-        key VARCHAR(255) NOT NULL UNIQUE,
-        value BOOLEAN NOT NULL DEFAULT true,
-        description TEXT,
-        updated_by VARCHAR(255),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    // Crear índice único
-    await sequelize.query(`
-      CREATE UNIQUE INDEX feature_flags_key_unique ON feature_flags (key)
-    `);
-
-    // Insertar switches iniciales
-    await sequelize.query(`
-      INSERT INTO feature_flags (key, value, description, updated_by, updated_at)
-      VALUES
-        ('MEMBERSHIPS_ENABLED', false, 'Controla si se crean membresías en Frapp. false = MODO TESTING (simula), true = MODO PRODUCCIÓN (crea real)', 'migration', NOW()),
-        ('WORLDOFFICE_INVOICE_ENABLED', false, 'Controla si se crean facturas en World Office. false = MODO TESTING (simula), true = MODO PRODUCCIÓN (crea real)', 'migration', NOW()),
-        ('WORLDOFFICE_DIAN_ENABLED', false, 'Controla si se emiten facturas ante la DIAN. false = DESACTIVADO (skip), true = ACTIVADO (emite)', 'migration', NOW())
-    `);
-
-    logger.info('✅ Tabla feature_flags creada exitosamente');
-
+    // Si no se creó nada ni se insertó nada, es porque ya está todo
     res.json({
       success: true,
-      message: 'Migración ejecutada exitosamente',
-      switches: {
-        MEMBERSHIPS_ENABLED: false,
-        WORLDOFFICE_INVOICE_ENABLED: false,
-        WORLDOFFICE_DIAN_ENABLED: false
-      }
+      message: 'La tabla y switches ya existen',
+      alreadyExists: true,
+      switchesCount: existingFlags.length
     });
 
   } catch (error) {
