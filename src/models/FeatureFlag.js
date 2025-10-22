@@ -15,7 +15,6 @@ const FeatureFlag = sequelize.define('FeatureFlag', {
   key: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
     comment: 'Identificador único del switch (ej: "MEMBERSHIPS_ENABLED")'
   },
   value: {
