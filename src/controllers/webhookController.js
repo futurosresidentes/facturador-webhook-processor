@@ -545,7 +545,7 @@ async function getRecentWebhooks(req, res) {
         {
           model: WebhookLog,
           as: 'logs',
-          attributes: ['id', 'stage', 'status', 'message', 'created_at'],
+          attributes: ['id', 'stage', 'status', 'details', 'error_message', 'created_at'],
           required: false // LEFT JOIN para incluir webhooks sin logs
         }
       ],
@@ -599,7 +599,8 @@ async function getRecentWebhooks(req, res) {
         if (logsByStatus[log.status]) {
           logsByStatus[log.status].push({
             stage: log.stage,
-            message: log.message,
+            details: log.details,
+            error_message: log.error_message,
             timestamp: log.created_at
           });
         }
