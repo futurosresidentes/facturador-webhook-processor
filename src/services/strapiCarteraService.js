@@ -29,13 +29,13 @@ function normalize(str) {
  */
 async function fetchCuotasAcuerdo(nroAcuerdo) {
   try {
-    const url = `${config.strapi.url}/api/carteras?filters[nro_acuerdo][$eq]=${nroAcuerdo}&pagination[pageSize]=100&populate=*`;
+    const url = `${config.strapi.apiUrl}/api/carteras?filters[nro_acuerdo][$eq]=${nroAcuerdo}&pagination[pageSize]=100&populate=*`;
 
     logger.info(`[StrapiCartera] Consultando cuotas del acuerdo: ${nroAcuerdo}`);
 
     const response = await axios.get(url, {
       headers: {
-        'Authorization': `Bearer ${config.strapi.token}`,
+        'Authorization': `Bearer ${config.strapi.apiToken}`,
         'Content-Type': 'application/json'
       },
       timeout: 10000
@@ -72,13 +72,13 @@ async function fetchCuotasAcuerdo(nroAcuerdo) {
  */
 async function fetchPagosAcuerdo(nroAcuerdo) {
   try {
-    const url = `${config.strapi.url}/api/facturaciones?filters[acuerdo][$eq]=${nroAcuerdo}&pagination[pageSize]=500&populate=*`;
+    const url = `${config.strapi.apiUrl}/api/facturaciones?filters[acuerdo][$eq]=${nroAcuerdo}&pagination[pageSize]=500&populate=*`;
 
     logger.info(`[StrapiCartera] Consultando pagos del acuerdo: ${nroAcuerdo}`);
 
     const response = await axios.get(url, {
       headers: {
-        'Authorization': `Bearer ${config.strapi.token}`,
+        'Authorization': `Bearer ${config.strapi.apiToken}`,
         'Content-Type': 'application/json'
       },
       timeout: 10000
@@ -164,11 +164,11 @@ function findPagosParaCuota(pagos, productoBase, cuotaNro, totalCuotas) {
  */
 async function actualizarCuota(documentId, data) {
   try {
-    const url = `${config.strapi.url}/api/carteras/${documentId}`;
+    const url = `${config.strapi.apiUrl}/api/carteras/${documentId}`;
 
     await axios.put(url, { data }, {
       headers: {
-        'Authorization': `Bearer ${config.strapi.token}`,
+        'Authorization': `Bearer ${config.strapi.apiToken}`,
         'Content-Type': 'application/json'
       },
       timeout: 10000

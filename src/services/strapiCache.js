@@ -38,18 +38,18 @@ function normalizeString(str) {
 async function fetchComercialesFromAPI() {
   try {
     // Validar que las credenciales estén configuradas
-    if (!config.strapi?.url || !config.strapi?.token) {
-      logger.warn('[StrapiCache] ⚠️  Variables de entorno no configuradas (STRAPI_URL o STRAPI_TOKEN). Caché de comerciales deshabilitado.');
+    if (!config.strapi?.apiUrl || !config.strapi?.apiToken) {
+      logger.warn('[StrapiCache] ⚠️  Variables de entorno no configuradas (STRAPI_API_URL o STRAPI_API_TOKEN). Caché de comerciales deshabilitado.');
       return [];
     }
 
     logger.info('[StrapiCache] Consultando comerciales desde Strapi API...');
 
     const response = await axios.get(
-      `${config.strapi.url}/api/comerciales?pagination[pageSize]=1000`,
+      `${config.strapi.apiUrl}/api/comerciales?pagination[pageSize]=1000`,
       {
         headers: {
-          'Authorization': `Bearer ${config.strapi.token}`,
+          'Authorization': `Bearer ${config.strapi.apiToken}`,
           'Content-Type': 'application/json'
         },
         timeout: 10000
@@ -85,18 +85,18 @@ async function fetchComercialesFromAPI() {
 async function fetchProductosFromAPI() {
   try {
     // Validar que las credenciales estén configuradas
-    if (!config.strapi?.url || !config.strapi?.token) {
-      logger.warn('[StrapiCache] ⚠️  Variables de entorno no configuradas (STRAPI_URL o STRAPI_TOKEN). Caché de productos deshabilitado.');
+    if (!config.strapi?.apiUrl || !config.strapi?.apiToken) {
+      logger.warn('[StrapiCache] ⚠️  Variables de entorno no configuradas (STRAPI_API_URL o STRAPI_API_TOKEN). Caché de productos deshabilitado.');
       return [];
     }
 
     logger.info('[StrapiCache] Consultando productos desde Strapi API...');
 
     const response = await axios.get(
-      `${config.strapi.url}/api/productos?pagination[pageSize]=1000`,
+      `${config.strapi.apiUrl}/api/productos?pagination[pageSize]=1000`,
       {
         headers: {
-          'Authorization': `Bearer ${config.strapi.token}`,
+          'Authorization': `Bearer ${config.strapi.apiToken}`,
           'Content-Type': 'application/json'
         },
         timeout: 10000

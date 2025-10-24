@@ -712,8 +712,8 @@ async function processWebhook(webhookId) {
 
     try {
       // Validar configuración de Strapi
-      if (!config.strapi?.url || !config.strapi?.token) {
-        throw new Error('Configuración de Strapi incompleta. Faltan variables: STRAPI_URL y/o STRAPI_TOKEN');
+      if (!config.strapi?.apiUrl || !config.strapi?.apiToken) {
+        throw new Error('Configuración de Strapi incompleta. Faltan variables: STRAPI_API_URL y/o STRAPI_API_TOKEN');
       }
 
       // 7A: Buscar comercial en caché de Strapi
@@ -842,11 +842,11 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] Payload para Strapi facturaciones preparado`);
 
       // 7E: POST a /api/facturaciones
-      const strapiUrl = `${config.strapi.url}/api/facturaciones`;
+      const strapiUrl = `${config.strapi.apiUrl}/api/facturaciones`;
 
       const strapiResponse = await axios.post(strapiUrl, { data: facturacionPayload }, {
         headers: {
-          'Authorization': `Bearer ${config.strapi.token}`,
+          'Authorization': `Bearer ${config.strapi.apiToken}`,
           'Content-Type': 'application/json'
         },
         timeout: 10000
