@@ -7,6 +7,7 @@
  * 4. Envía notificaciones de éxito/error
  */
 
+const axios = require('axios');
 const { Webhook, WebhookLog, Contact } = require('../models');
 const FeatureFlag = require('../models/FeatureFlag');
 const fr360Service = require('./fr360Service');
@@ -14,7 +15,9 @@ const crmService = require('./crmService');
 const membershipService = require('./membershipService');
 const worldOfficeService = require('./worldOfficeService');
 const notificationService = require('./notificationService');
-const { requiresMemberships } = require('../utils/productFilter');
+const strapiCache = require('./strapiCache');
+const strapiCarteraService = require('./strapiCarteraService');
+const { requiresMemberships, getProductBase } = require('../utils/productFilter');
 const config = require('../config/env');
 const logger = require('../config/logger');
 
@@ -695,6 +698,199 @@ async function processWebhook(webhookId) {
 
       // No lanzar error, continuar proceso (emisión DIAN no es crítica)
       logger.warn(`[Processor] Continuando proceso sin emisión DIAN`);
+    }
+
+    // ===================================================================
+    // PASO 7: REGISTRO EN STRAPI + ACTUALIZACIÓN DE CARTERAS
+    // ===================================================================
+    stepTimestamps.paso7 = Date.now();
+    logger.info(`[Processor] PASO 7: Registrando en Strapi y actualizando carteras`);
+
+    let strapiFacturacionId = null;
+    let pazYSalvo = null;
+    let cuotasActualizadas = 0;
+
+    try {
+      // 7A: Buscar comercial en caché de Strapi
+      const comercial = await strapiCache.findComercialByName(paymentLinkData.salesRep);
+      const comercialId = comercial ? comercial.id : null;
+
+      if (!comercialId) {
+        logger.warn(`[Processor] Comercial no encontrado en Strapi: ${paymentLinkData.salesRep}`);
+      } else {
+        logger.info(`[Processor] Comercial encontrado: ${paymentLinkData.salesRep} → ID ${comercialId}`);
+      }
+
+      // 7B: Buscar producto en caché de Strapi
+      const productoBase = getProductBase(paymentLinkData.product) || paymentLinkData.product;
+      const producto = await strapiCache.findProductoByName(productoBase);
+      const productoId = producto ? producto.id : null;
+
+      if (!productoId) {
+        logger.warn(`[Processor] Producto no encontrado en Strapi: ${productoBase}`);
+      } else {
+        logger.info(`[Processor] Producto encontrado: ${productoBase} → ID ${productoId}`);
+      }
+
+      // 7C: Calcular paz_y_salvo
+      const acuerdo = paymentLinkData.agreementId || 'Contado';
+
+      if (acuerdo === 'Contado') {
+        // Pagos de contado siempre están a paz y salvo
+        pazYSalvo = 'Si';
+        logger.info(`[Processor] Acuerdo "Contado" → paz_y_salvo = "Si"`);
+
+      } else {
+        // Acuerdo financiado: actualizar carteras y determinar paz y salvo
+        logger.info(`[Processor] Acuerdo financiado: ${acuerdo}`);
+
+        // Obtener valorUnitario del PASO 6 (invoice creation)
+        const valorUnitario = invoiceResult?.renglones?.[0]?.valorUnitario || invoiceResult?.subtotal || webhook.amount;
+
+        // Preparar el pago actual para simular
+        const pagoNuevo = {
+          producto: paymentLinkData.product, // Producto completo con "- Cuota N"
+          valor_neto: parseFloat(valorUnitario),
+          fecha: new Date().toISOString(),
+          acuerdo: acuerdo
+        };
+
+        logger.info(`[Processor] Simulando pago: ${pagoNuevo.producto} → $${pagoNuevo.valor_neto}`);
+
+        // Actualizar carteras y determinar si queda a paz y salvo
+        const resultadoCarteras = await strapiCarteraService.actualizarCarterasPorAcuerdo(acuerdo, pagoNuevo);
+
+        cuotasActualizadas = resultadoCarteras.cuotas_actualizadas;
+        pazYSalvo = resultadoCarteras.todas_pagadas ? 'Si' : 'No';
+
+        logger.info(`[Processor] Carteras actualizadas: ${cuotasActualizadas} cuotas`);
+        logger.info(`[Processor] Todas pagadas: ${resultadoCarteras.todas_pagadas} → paz_y_salvo = "${pazYSalvo}"`);
+
+        // LOG: Actualización de carteras
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'strapi_cartera_update',
+          status: 'success',
+          details: `${cuotasActualizadas} cuotas actualizadas para acuerdo ${acuerdo}. Paz y salvo: ${pazYSalvo}`,
+          request_payload: { acuerdo, pago_nuevo: pagoNuevo },
+          response_data: {
+            cuotas_actualizadas: cuotasActualizadas,
+            todas_pagadas: resultadoCarteras.todas_pagadas,
+            paz_y_salvo: pazYSalvo,
+            detalles: resultadoCarteras.detalles
+          }
+        });
+      }
+
+      // 7D: Preparar payload para /api/facturaciones
+      const valorUnitario = invoiceResult?.renglones?.[0]?.valorUnitario || invoiceResult?.subtotal || webhook.amount;
+      const valorBruto = parseFloat(webhook.amount);
+      const valorSinIva = parseFloat(valorUnitario);
+      const vlrAntesDeIva = (valorBruto - valorSinIva) / 1.19;
+      const valorNeto = valorSinIva + vlrAntesDeIva;
+
+      // Calcular comentarios (si el pagador es diferente al titular)
+      const webhookDocument = webhook.raw_data?.x_customer_document;
+      const cedulaTitular = paymentLinkData.identityDocument;
+      let comentarios = null;
+
+      if (webhookDocument && webhookDocument !== cedulaTitular) {
+        const pagadorNombre = webhook.raw_data?.x_customer_name || '';
+        const pagadorApellido = webhook.raw_data?.x_customer_lastname || '';
+        comentarios = `Pagador: ${pagadorNombre} ${pagadorApellido} CC: ${webhookDocument}`;
+        logger.info(`[Processor] Pagador diferente detectado: ${comentarios}`);
+      }
+
+      // Fecha inicio (accessDate de FR360, o hoy)
+      const fechaInicioRaw = paymentLinkData.accessDate || new Date();
+      const fechaInicio = new Date(fechaInicioRaw).toISOString();
+
+      // Fecha actual (Colombia)
+      const fechaHoy = new Date().toISOString();
+
+      const facturacionPayload = {
+        tipo_documento: 1,
+        numero_documento: paymentLinkData.identityDocument,
+        transaccion: invoiceId,
+        nombres: paymentLinkData.givenName,
+        apellidos: paymentLinkData.familyName,
+        ciudad: woCustomerResult.customerData?.cityName || webhook.customer_city || 'N/A',
+        direccion: webhook.customer_address || 'N/A',
+        telefono: paymentLinkData.phone,
+        correo: paymentLinkData.email,
+        comercial: comercialId,
+        producto: productoId,
+        valor_bruto: valorBruto,
+        valor_sin_iva: valorSinIva,
+        vlr_antes_de_iva: vlrAntesDeIva,
+        valor_neto: valorNeto,
+        acuerdo: acuerdo,
+        fecha_inicio: fechaInicio,
+        activacion: null, // Siempre null según especificación
+        paz_y_salvo: pazYSalvo,
+        comentarios: comentarios,
+        id_tercero_WO: woCustomerResult.customerId || null,
+        doc_venta_wo: invoiceResult?.documentoId || null,
+        fecha: fechaHoy
+      };
+
+      logger.info(`[Processor] Payload para Strapi facturaciones preparado`);
+
+      // 7E: POST a /api/facturaciones
+      const strapiUrl = `${config.strapi.url}/api/facturaciones`;
+
+      const strapiResponse = await axios.post(strapiUrl, { data: facturacionPayload }, {
+        headers: {
+          'Authorization': `Bearer ${config.strapi.token}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+
+      strapiFacturacionId = strapiResponse.data.data?.id || strapiResponse.data.data?.documentId;
+
+      logger.info(`[Processor] Facturación registrada en Strapi - ID: ${strapiFacturacionId}`);
+      completedStages.strapi_facturacion = true;
+
+      // LOG: Facturación creada en Strapi
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'strapi_facturacion_creation',
+        status: 'success',
+        details: `Facturación registrada en Strapi - ID: ${strapiFacturacionId}, Acuerdo: ${acuerdo}, Paz y salvo: ${pazYSalvo}, Comercial: ${paymentLinkData.salesRep} (ID: ${comercialId}), Producto: ${productoBase} (ID: ${productoId})`,
+        request_payload: facturacionPayload,
+        response_data: strapiResponse.data
+      });
+
+      // NOTIFICACIÓN PASO 7: Strapi
+      const paso7Duration = Date.now() - stepTimestamps.paso7;
+
+      await notificationService.notifyStep(9, 'REGISTRO STRAPI + CARTERAS', {
+        'Facturación ID': strapiFacturacionId || 'N/A',
+        'Acuerdo': acuerdo,
+        'Paz y salvo': pazYSalvo === 'Si' ? '✅ SÍ' : '❌ NO',
+        'Cuotas actualizadas': cuotasActualizadas > 0 ? `${cuotasActualizadas} cuotas` : 'N/A (Contado)',
+        'Comercial': `${paymentLinkData.salesRep} (ID: ${comercialId || 'N/A'})`,
+        'Producto': `${productoBase} (ID: ${productoId || 'N/A'})`,
+        'Valor neto': `$${valorNeto.toLocaleString('es-CO')}`,
+        'ID Tercero WO': woCustomerResult.customerId || 'N/A',
+        'Doc Venta WO': invoiceResult?.documentoId || 'N/A'
+      }, paso7Duration);
+
+    } catch (error) {
+      logger.error(`[Processor] Error en PASO 7 (Strapi): ${error.message}`);
+
+      // LOG ERROR PASO 7
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'strapi_facturacion_creation',
+        status: 'error',
+        details: `Error registrando facturación en Strapi`,
+        error_message: error.message
+      });
+
+      // No lanzar error, continuar proceso (Strapi no es crítico para el flujo principal)
+      logger.warn(`[Processor] Continuando proceso sin registro en Strapi`);
     }
 
     // Preparar mensaje final según resultado

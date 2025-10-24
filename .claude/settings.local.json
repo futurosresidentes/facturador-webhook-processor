@@ -6,7 +6,9 @@
       "Bash(node:*)",
       "Bash(timeout 20 npm start:*)",
       "Bash(dir:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Read(//c/Sitios/FR360/**)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
