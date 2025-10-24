@@ -90,8 +90,8 @@ module.exports = {
 
   // Strapi Facturación
   strapi: {
-    apiUrl: process.env.STRAPI_API_URL,
-    apiToken: process.env.STRAPI_API_TOKEN
+    url: process.env.STRAPI_URL || process.env.STRAPI_API_URL,
+    token: process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN
   },
 
   // Callbell (WhatsApp notifications)

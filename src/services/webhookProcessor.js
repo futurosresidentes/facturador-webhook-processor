@@ -711,6 +711,11 @@ async function processWebhook(webhookId) {
     let cuotasActualizadas = 0;
 
     try {
+      // Validar configuración de Strapi
+      if (!config.strapi?.url || !config.strapi?.token) {
+        throw new Error('Configuración de Strapi incompleta. Faltan variables: STRAPI_URL y/o STRAPI_TOKEN');
+      }
+
       // 7A: Buscar comercial en caché de Strapi
       const comercial = await strapiCache.findComercialByName(paymentLinkData.salesRep);
       const comercialId = comercial ? comercial.id : null;
