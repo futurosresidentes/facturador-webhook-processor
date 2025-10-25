@@ -727,15 +727,14 @@ async function processWebhook(webhookId) {
         logger.info(`[Processor] Comercial encontrado: ${paymentLinkData.salesRep} → ID ${comercialId}`);
       }
 
-      // 7B: Buscar producto en caché de Strapi
-      const productoBase = getProductBase(paymentLinkData.product) || paymentLinkData.product;
-      const producto = await strapiCache.findProductoByName(productoBase);
+      // 7B: Buscar producto en caché de Strapi (primero completo, luego base)
+      const producto = await strapiCache.findProductoByName(paymentLinkData.product);
       const productoId = producto ? producto.id : null;
 
       if (!productoId) {
-        logger.warn(`[Processor] Producto no encontrado en Strapi: ${productoBase}`);
+        logger.warn(`[Processor] Producto no encontrado en Strapi: ${paymentLinkData.product}`);
       } else {
-        logger.info(`[Processor] Producto encontrado: ${productoBase} → ID ${productoId}`);
+        logger.info(`[Processor] Producto encontrado: ${paymentLinkData.product} → ID ${productoId}`);
       }
 
       // 7C: Calcular paz_y_salvo

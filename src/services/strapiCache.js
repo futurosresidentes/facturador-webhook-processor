@@ -238,7 +238,7 @@ async function findComercialByName(nombreComercial) {
 }
 
 /**
- * Busca un producto por nombre (normalizado, sin "- Cuota N")
+ * Busca un producto por nombre (primero completo, luego base)
  * @param {string} nombreProducto - Nombre del producto a buscar (puede incluir "- Cuota N")
  * @returns {Promise<Object|null>} Objeto de producto encontrado o null
  */
@@ -257,32 +257,60 @@ async function findProductoByName(nombreProducto) {
     return null;
   }
 
-  // Normalizar el producto (quitar "- Cuota N", "- Cuota N (Mora)", etc.)
-  const { getProductBase } = require('../utils/productFilter');
-  const productoBase = getProductBase(nombreProducto) || nombreProducto;
+  // PASO 1: Buscar el producto COMPLETO (con "- Cuota X" si existe)
+  const normalizedCompleto = normalizeString(nombreProducto);
 
-  const normalizedSearch = normalizeString(productoBase);
-
-  // 1. Búsqueda exacta normalizada
-  let found = productosCache.find(p => p.nombreNormalizado === normalizedSearch);
+  // 1A. Búsqueda exacta del producto completo
+  let found = productosCache.find(p => p.nombreNormalizado === normalizedCompleto);
 
   if (found) {
-    logger.info(`[StrapiCache] Producto encontrado (exacto): "${nombreProducto}" → "${productoBase}" → ID ${found.id}`);
+    logger.info(`[StrapiCache] Producto encontrado (completo exacto): "${nombreProducto}" → ID ${found.id}`);
     return found;
   }
 
-  // 2. Búsqueda parcial (contiene)
+  // 1B. Búsqueda parcial del producto completo
   found = productosCache.find(p =>
-    p.nombreNormalizado.includes(normalizedSearch) ||
-    normalizedSearch.includes(p.nombreNormalizado)
+    p.nombreNormalizado.includes(normalizedCompleto) ||
+    normalizedCompleto.includes(p.nombreNormalizado)
   );
 
   if (found) {
-    logger.info(`[StrapiCache] Producto encontrado (parcial): "${nombreProducto}" → "${productoBase}" → ID ${found.id}`);
+    logger.info(`[StrapiCache] Producto encontrado (completo parcial): "${nombreProducto}" → ID ${found.id}`);
     return found;
   }
 
-  logger.warn(`[StrapiCache] Producto no encontrado: "${nombreProducto}" (base: "${productoBase}")`);
+  // PASO 2: Si no se encontró, buscar por producto BASE (sin "- Cuota X")
+  const { getProductBase } = require('../utils/productFilter');
+  const productoBase = getProductBase(nombreProducto);
+
+  // Si el producto base es diferente al completo, intentar búsqueda
+  if (productoBase && productoBase !== nombreProducto) {
+    const normalizedBase = normalizeString(productoBase);
+
+    // 2A. Búsqueda exacta del producto base
+    found = productosCache.find(p => p.nombreNormalizado === normalizedBase);
+
+    if (found) {
+      logger.info(`[StrapiCache] Producto encontrado (base exacto): "${nombreProducto}" → base "${productoBase}" → ID ${found.id}`);
+      return found;
+    }
+
+    // 2B. Búsqueda parcial del producto base
+    found = productosCache.find(p =>
+      p.nombreNormalizado.includes(normalizedBase) ||
+      normalizedBase.includes(p.nombreNormalizado)
+    );
+
+    if (found) {
+      logger.info(`[StrapiCache] Producto encontrado (base parcial): "${nombreProducto}" → base "${productoBase}" → ID ${found.id}`);
+      return found;
+    }
+
+    logger.warn(`[StrapiCache] Producto no encontrado: "${nombreProducto}" (base: "${productoBase}")`);
+  } else {
+    logger.warn(`[StrapiCache] Producto no encontrado: "${nombreProducto}"`);
+  }
+
   return null;
 }
 
