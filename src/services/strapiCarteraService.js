@@ -66,7 +66,9 @@ async function fetchCuotasAcuerdo(nroAcuerdo) {
         producto: cuota.producto?.nombre || cuota.attributes?.producto?.data?.nombre || cuota.attributes?.producto?.data?.attributes?.nombre,
         estado_pago: cuota.estado_pago || cuota.attributes?.estado_pago || 'al_dia',
         fecha_de_pago: cuota.fecha_de_pago || cuota.attributes?.fecha_de_pago,
-        valor_pagado: cuota.valor_pagado || cuota.attributes?.valor_pagado || 0
+        valor_pagado: cuota.valor_pagado || cuota.attributes?.valor_pagado || 0,
+        id_pago: cuota.id_pago || cuota.attributes?.id_pago,
+        id_pago_mora: cuota.id_pago_mora || cuota.attributes?.id_pago_mora
       }));
     }
 
@@ -114,6 +116,7 @@ async function fetchPagosAcuerdo(nroAcuerdo) {
 
         return {
           id: pago.id,
+          transaccion: attrs.transaccion,
           producto: productoNombre,
           valor_neto: attrs.valor_neto || 0,
           fecha: attrs.fecha || attrs.createdAt,
@@ -246,19 +249,74 @@ async function actualizarCarterasPorAcuerdo(nroAcuerdo, pagoNuevo) {
       logger.info(`[StrapiCartera] --- Procesando Cuota ${cuotaNro}/${totalCuotas} ---`);
       logger.info(`[StrapiCartera] Producto: ${productoBase}, Valor: $${valorCuota}`);
 
-      // Buscar pagos relacionados con esta cuota
-      const pagosRelacionados = findPagosParaCuota(todosPagos, productoBase, cuotaNro, totalCuotas);
+      // MÉTODO 1: Búsqueda directa por id_pago o id_pago_mora
+      let pagosRelacionados = [];
 
-      logger.info(`[StrapiCartera] ${pagosRelacionados.length} pagos relacionados encontrados`);
+      if (cuota.id_pago || cuota.id_pago_mora) {
+        logger.info(`[StrapiCartera] Buscando pago directo por ID: id_pago="${cuota.id_pago || 'N/A'}", id_pago_mora="${cuota.id_pago_mora || 'N/A'}"`);
+
+        // Buscar en facturaciones por campo 'transaccion'
+        pagosRelacionados = todosPagos.filter(pago => {
+          const transaccion = pago.transaccion; // Campo 'transaccion' viene en todos los pagos
+          if (!transaccion) return false; // Si no tiene transaccion, no puede hacer match
+
+          if (cuota.id_pago && transaccion === cuota.id_pago) {
+            logger.info(`[StrapiCartera] ✅ MATCH directo: transaccion="${transaccion}" == id_pago="${cuota.id_pago}"`);
+            return true;
+          }
+          if (cuota.id_pago_mora && transaccion === cuota.id_pago_mora) {
+            logger.info(`[StrapiCartera] ✅ MATCH directo (MORA): transaccion="${transaccion}" == id_pago_mora="${cuota.id_pago_mora}"`);
+            return true;
+          }
+          return false;
+        });
+
+        if (pagosRelacionados.length > 0) {
+          logger.info(`[StrapiCartera] ${pagosRelacionados.length} pago(s) encontrado(s) por ID directo`);
+        } else {
+          logger.info(`[StrapiCartera] No se encontraron pagos por ID directo, usando búsqueda por nombre de producto...`);
+        }
+      }
+
+      // MÉTODO 2: Si no se encontró por ID directo, buscar por nombre de producto
+      if (pagosRelacionados.length === 0) {
+        pagosRelacionados = findPagosParaCuota(todosPagos, productoBase, cuotaNro, totalCuotas);
+        logger.info(`[StrapiCartera] ${pagosRelacionados.length} pagos relacionados encontrados por nombre de producto`);
+      }
 
       if (pagosRelacionados.length === 0) {
-        // No hay pagos para esta cuota
-        logger.info(`[StrapiCartera] Sin pagos → Estado: al_dia`);
+        // No hay pagos para esta cuota - verificar si está vencida
+        let estadoSinPagos = 'al_dia';
+
+        // Verificar vencimiento si tiene fecha_limite
+        if (cuota.fecha_limite && cuota.fecha_limite !== '1970-01-01') {
+          const hoy = new Date();
+          hoy.setHours(0, 0, 0, 0);
+          const limite = new Date(cuota.fecha_limite + 'T00:00:00');
+
+          if (limite < hoy) {
+            estadoSinPagos = 'en_mora';
+            logger.info(`[StrapiCartera] Sin pagos + vencida (límite: ${cuota.fecha_limite}) → en_mora`);
+          } else {
+            logger.info(`[StrapiCartera] Sin pagos → al_dia (límite: ${cuota.fecha_limite})`);
+          }
+        } else {
+          logger.info(`[StrapiCartera] Sin pagos → al_dia (sin fecha límite)`);
+        }
+
+        // Actualizar cuota en Strapi
+        const updateData = {
+          estado_pago: estadoSinPagos,
+          fecha_de_pago: null,
+          valor_pagado: 0
+        };
+
+        await actualizarCuota(cuota.documentId, updateData);
+        cuotasActualizadas++;
+
         detalles.push({
           cuota_nro: cuotaNro,
-          estado_pago: 'al_dia',
-          valor_pagado: 0,
-          fecha_de_pago: null
+          ...updateData
         });
         continue;
       }

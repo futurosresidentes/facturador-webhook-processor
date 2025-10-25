@@ -755,6 +755,7 @@ async function processWebhook(webhookId) {
 
         // Preparar el pago actual para simular
         const pagoNuevo = {
+          transaccion: invoiceId, // ID de la factura/transacción
           producto: paymentLinkData.product, // Producto completo con "- Cuota N"
           valor_neto: parseFloat(valorUnitario),
           fecha: toColombiaISO(), // Fecha en hora de Colombia (UTC-5)
