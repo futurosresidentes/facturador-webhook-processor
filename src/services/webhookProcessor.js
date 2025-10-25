@@ -18,6 +18,7 @@ const notificationService = require('./notificationService');
 const strapiCache = require('./strapiCache');
 const strapiCarteraService = require('./strapiCarteraService');
 const { requiresMemberships, getProductBase } = require('../utils/productFilter');
+const { toColombiaISO } = require('../utils/dateUtils');
 const config = require('../config/env');
 const logger = require('../config/logger');
 
@@ -756,7 +757,7 @@ async function processWebhook(webhookId) {
         const pagoNuevo = {
           producto: paymentLinkData.product, // Producto completo con "- Cuota N"
           valor_neto: parseFloat(valorUnitario),
-          fecha: new Date().toISOString(),
+          fecha: toColombiaISO(), // Fecha en hora de Colombia (UTC-5)
           acuerdo: acuerdo
         };
 
@@ -806,12 +807,12 @@ async function processWebhook(webhookId) {
         logger.info(`[Processor] Pagador diferente detectado: ${comentarios}`);
       }
 
-      // Fecha inicio (accessDate de FR360, o hoy)
-      const fechaInicioRaw = paymentLinkData.accessDate || new Date();
-      const fechaInicio = new Date(fechaInicioRaw).toISOString();
+      // Fecha inicio (accessDate de FR360, o hoy en Colombia)
+      const fechaInicioRaw = paymentLinkData.accessDate;
+      const fechaInicio = fechaInicioRaw ? new Date(fechaInicioRaw).toISOString() : toColombiaISO();
 
-      // Fecha actual (Colombia)
-      const fechaHoy = new Date().toISOString();
+      // Fecha actual (Colombia UTC-5)
+      const fechaHoy = toColombiaISO();
 
       const facturacionPayload = {
         tipo_documento: 1,
