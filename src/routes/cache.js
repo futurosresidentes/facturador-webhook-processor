@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const cacheController = require('../controllers/cacheController');
-const { authenticate } = require('../middleware/auth');
+const authenticate = require('../middleware/authenticate');
 
 /**
  * GET /api/cache/status
