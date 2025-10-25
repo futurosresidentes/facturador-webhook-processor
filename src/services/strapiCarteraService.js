@@ -10,6 +10,18 @@ const logger = require('../config/logger');
 const TOLERANCIA = 1000; // 1000 COP de tolerancia para redondeos
 
 /**
+ * Extrae solo la fecha (YYYY-MM-DD) de un ISO string, preservando la zona horaria
+ * @param {string} isoString - Fecha en formato ISO (ej: "2025-10-24T19:13:33.085-05:00")
+ * @returns {string} Fecha en formato YYYY-MM-DD
+ */
+function extractDateOnly(isoString) {
+  if (!isoString) return null;
+  // Simplemente tomar los primeros 10 caracteres (YYYY-MM-DD)
+  // Esto preserva la fecha sin conversión de zona horaria
+  return isoString.split('T')[0];
+}
+
+/**
  * Normaliza un string para comparación
  * @param {string} str - String a normalizar
  * @returns {string} String normalizado
@@ -258,7 +270,7 @@ async function actualizarCarterasPorAcuerdo(nroAcuerdo, pagoNuevo) {
 
       if (pagosPazYSalvo.length > 0 && cuotaNro === totalCuotas) {
         const paz = pagosPazYSalvo[pagosPazYSalvo.length - 1]; // Último paz y salvo
-        const fechaISO = new Date(paz.fecha).toISOString().split('T')[0];
+        const fechaISO = extractDateOnly(paz.fecha);
 
         logger.info(`[StrapiCartera] ✅ PAZ Y SALVO encontrado → Cuota marcada como PAGADA`);
 
@@ -295,7 +307,7 @@ async function actualizarCarterasPorAcuerdo(nroAcuerdo, pagoNuevo) {
       // Determinar estado (con tolerancia)
       const pagadoCompleto = valorCuota ? (sumaPagos + TOLERANCIA >= valorCuota) : sumaPagos > 0;
       const estadoPago = pagadoCompleto ? 'pagado' : 'en_mora';
-      const fechaISO = ultimaFecha ? new Date(ultimaFecha).toISOString().split('T')[0] : null;
+      const fechaISO = ultimaFecha ? extractDateOnly(ultimaFecha) : null;
 
       logger.info(`[StrapiCartera] Estado calculado: ${estadoPago}`);
 
