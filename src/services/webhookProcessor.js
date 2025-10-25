@@ -13,6 +13,7 @@ const FeatureFlag = require('../models/FeatureFlag');
 const fr360Service = require('./fr360Service');
 const crmService = require('./crmService');
 const membershipService = require('./membershipService');
+const callbellService = require('./callbellService');
 const worldOfficeService = require('./worldOfficeService');
 const notificationService = require('./notificationService');
 const strapiCache = require('./strapiCache');
@@ -131,6 +132,64 @@ async function processWebhook(webhookId) {
       'Fecha de acceso': paymentLinkData.accessDate,
       'Resultado': '✅ Datos obtenidos exitosamente'
     }, paso2Duration);
+
+    // PASO 2.1: Notificar al cliente vía Callbell
+    stepTimestamps.paso2_1 = Date.now();
+    logger.info(`[Processor] PASO 2.1: Enviando notificación Callbell al cliente`);
+
+    let callbellResult = null;
+    try {
+      callbellResult = await callbellService.sendPaymentTemplate({
+        phone: paymentLinkData.phone,
+        givenName: paymentLinkData.givenName,
+        amount: `$${parseFloat(webhook.amount).toLocaleString('es-CO')}`,
+        email: paymentLinkData.email
+      });
+
+      if (callbellResult.success) {
+        logger.info(`[Processor] ✅ Notificación Callbell enviada: ${callbellResult.messageId}`);
+        completedStages.callbell_notification = true;
+      } else {
+        logger.warn(`[Processor] ⚠️ Notificación Callbell falló (no bloquea proceso): ${callbellResult.error}`);
+      }
+
+      // LOG PASO 2.1: Callbell
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'callbell_notification',
+        status: callbellResult.success ? 'success' : 'warning',
+        details: callbellResult.success
+          ? `Notificación enviada a ${callbellResult.phone} - Message ID: ${callbellResult.messageId}`
+          : `Notificación falló: ${callbellResult.error}`,
+        request_payload: {
+          phone: paymentLinkData.phone,
+          givenName: paymentLinkData.givenName,
+          amount: webhook.amount,
+          email: paymentLinkData.email
+        },
+        response_data: callbellResult
+      });
+
+      // NOTIFICACIÓN PASO 2.1: Callbell
+      const paso2_1Duration = Date.now() - stepTimestamps.paso2_1;
+      await notificationService.notifyStep(2.1, 'NOTIFICACIÓN CALLBELL', {
+        'Teléfono': callbellResult.phone,
+        'Estado': callbellResult.success ? '✅ Enviado' : '⚠️ Falló',
+        'Message ID': callbellResult.messageId || 'N/A',
+        'Error': callbellResult.error || 'N/A'
+      }, paso2_1Duration);
+
+    } catch (error) {
+      logger.error(`[Processor] Error en PASO 2.1 (Callbell):`, error);
+      // No lanzar error, continuar con el proceso
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'callbell_notification',
+        status: 'error',
+        details: `Error al enviar notificación Callbell`,
+        error_message: error.message
+      });
+    }
 
     // STAGE 3: Verificar si el producto requiere creación de membresías
     stepTimestamps.paso3 = Date.now();

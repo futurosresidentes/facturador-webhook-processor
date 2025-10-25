@@ -112,7 +112,94 @@ async function sendCustomMessage(phone, message) {
   }
 }
 
+/**
+ * Formatea teléfono para Callbell (sin + ni espacios)
+ * Si es celular colombiano de 10 dígitos, agrega 57
+ * @param {string} phone - Teléfono a formatear
+ * @returns {string} Teléfono formateado
+ */
+function formatPhoneForCallbell(phone) {
+  if (!phone) return '';
+
+  // Limpiar espacios, + y guiones
+  let cleanPhone = phone.toString().replace(/[\s\+\-\(\)]/g, '');
+
+  // Si ya tiene 57 al inicio, retornar limpio
+  if (cleanPhone.startsWith('57')) {
+    return cleanPhone;
+  }
+
+  // Si es celular colombiano de 10 dígitos que empieza con 3
+  if (/^3\d{9}$/.test(cleanPhone)) {
+    return '57' + cleanPhone;
+  }
+
+  return cleanPhone;
+}
+
+/**
+ * PASO 2.1: Enviar plantilla de confirmación de pago vía Callbell
+ * @param {Object} data - Datos para la plantilla
+ * @param {string} data.phone - Teléfono del cliente
+ * @param {string} data.givenName - Primer nombre del cliente
+ * @param {string} data.amount - Monto pagado
+ * @param {string} data.email - Email del cliente
+ * @returns {Promise<Object>} Resultado del envío
+ */
+async function sendPaymentTemplate(data) {
+  try {
+    const phoneFormatted = formatPhoneForCallbell(data.phone);
+
+    // Extraer primer nombre (primera palabra)
+    const firstName = data.givenName ? data.givenName.split(' ')[0] : 'Cliente';
+
+    logger.info(`[Callbell] Enviando plantilla de pago a: ${phoneFormatted}`);
+
+    const payload = {
+      to: phoneFormatted,
+      from: 'whatsapp',
+      type: 'text',
+      content: {
+        text: 'Pago'
+      },
+      template_values: [
+        firstName,         // variable1: Primer nombre
+        data.amount,       // variable2: Valor del pago
+        data.email         // variable3: Email
+      ],
+      template_uuid: '50d4ef2e9daa4da881345914e3c0e4f3',
+      optin_contact: true
+    };
+
+    logger.info(`[Callbell] Payload:`, JSON.stringify(payload, null, 2));
+
+    const response = await callbellClient.post('/messages/send', payload);
+
+    logger.info(`[Callbell] ✅ Plantilla enviada exitosamente`);
+
+    return {
+      success: true,
+      phone: phoneFormatted,
+      messageId: response.data?.uuid || response.data?.id,
+      sentAt: new Date().toISOString(),
+      response: response.data
+    };
+
+  } catch (error) {
+    logger.error('[Callbell] Error enviando plantilla:', error.response?.data || error.message);
+
+    // No lanzar error para que no bloquee el proceso del webhook
+    return {
+      success: false,
+      phone: data.phone,
+      error: error.response?.data || error.message
+    };
+  }
+}
+
 module.exports = {
   notifyPaymentReceived,
-  sendCustomMessage
+  sendCustomMessage,
+  sendPaymentTemplate,
+  formatPhoneForCallbell
 };
