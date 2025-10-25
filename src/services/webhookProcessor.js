@@ -863,7 +863,7 @@ async function processWebhook(webhookId) {
         webhook_id: webhookId,
         stage: 'strapi_facturacion_creation',
         status: 'success',
-        details: `Facturación registrada en Strapi - ID: ${strapiFacturacionId}, Acuerdo: ${acuerdo}, Paz y salvo: ${pazYSalvo}, Comercial: ${paymentLinkData.salesRep} (ID: ${comercialId}), Producto: ${productoBase} (ID: ${productoId})`,
+        details: `Facturación registrada en Strapi - ID: ${strapiFacturacionId}, Acuerdo: ${acuerdo}, Paz y salvo: ${pazYSalvo}, Comercial: ${paymentLinkData.salesRep} (ID: ${comercialId}), Producto: ${paymentLinkData.product} (ID: ${productoId})`,
         request_payload: facturacionPayload,
         response_data: strapiResponse.data
       });
@@ -877,7 +877,7 @@ async function processWebhook(webhookId) {
         'Paz y salvo': pazYSalvo === 'Si' ? '✅ SÍ' : '❌ NO',
         'Cuotas actualizadas': cuotasActualizadas > 0 ? `${cuotasActualizadas} cuotas` : 'N/A (Contado)',
         'Comercial': `${paymentLinkData.salesRep} (ID: ${comercialId || 'N/A'})`,
-        'Producto': `${productoBase} (ID: ${productoId || 'N/A'})`,
+        'Producto': `${paymentLinkData.product} (ID: ${productoId || 'N/A'})`,
         'Valor neto': `$${valorNeto.toLocaleString('es-CO')}`,
         'ID Tercero WO': woCustomerResult.customerId || 'N/A',
         'Doc Venta WO': invoiceResult?.documentoId || 'N/A'
