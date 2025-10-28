@@ -623,18 +623,30 @@ async function processWebhook(webhookId) {
     let dianResult = null;
 
     // PASO 6A: Crear factura
-    stepTimestamps.paso6a = Date.now();
-
-    try {
-      invoiceResult = await worldOfficeService.createInvoice({
-        customerId: woCustomerResult.customerId,
-        comercialWOId: woCustomerResult.comercialWOId,
-        product: paymentLinkData.product,
-        amount: parseFloat(webhook.amount)
-      });
-
+    if (isStageCompleted(webhook, 'worldoffice_invoice_creation')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'worldoffice_invoice_creation');
+      invoiceResult = {
+        documentoId: stageData.documentoId,
+        numeroFactura: stageData.numeroFactura,
+        renglones: stageData.renglones,
+        simulado: stageData.simulado || false
+      };
+      logger.info(`[Processor] ⏭️  SKIP worldoffice_invoice_creation - Factura ${invoiceResult.numeroFactura} ya creada (cargada desde checkpoint)`);
       completedStages.worldoffice_invoice = true;
-      logger.info(`[Processor] Factura creada - Documento ID: ${invoiceResult.documentoId}`);
+    } else {
+      stepTimestamps.paso6a = Date.now();
+
+      try {
+        invoiceResult = await worldOfficeService.createInvoice({
+          customerId: woCustomerResult.customerId,
+          comercialWOId: woCustomerResult.comercialWOId,
+          product: paymentLinkData.product,
+          amount: parseFloat(webhook.amount)
+        });
+
+        completedStages.worldoffice_invoice = true;
+        logger.info(`[Processor] Factura creada - Documento ID: ${invoiceResult.documentoId}`);
 
       // LOG PASO 6A: Factura creada
       const renglonesResumen = invoiceResult.renglones?.map(r => {
@@ -754,6 +766,15 @@ async function processWebhook(webhookId) {
         'Resultado': '✅ Factura creada exitosamente'
       }, paso6aDuration);
 
+      // CHECKPOINT: Guardar factura creada
+      await saveCheckpoint(webhook, 'worldoffice_invoice_creation', {
+        documentoId: invoiceResult.documentoId,
+        numeroFactura: invoiceResult.numeroFactura,
+        renglones: invoiceResult.renglones,
+        simulado: invoiceResult.simulado || false,
+        amount: parseFloat(webhook.amount)
+      });
+
     } catch (error) {
       logger.error(`[Processor] Error creando factura: ${error.message}`);
 
@@ -768,6 +789,7 @@ async function processWebhook(webhookId) {
 
       throw error;
     }
+    } // Fin del else de worldoffice_invoice_creation
 
     // PASO 6B: Contabilizar factura
     stepTimestamps.paso6b = Date.now();
@@ -1058,33 +1080,51 @@ async function processWebhook(webhookId) {
 
       logger.info(`[Processor] Payload para Strapi facturaciones preparado`);
 
-      // 7E: POST a /api/facturaciones
-      const strapiUrl = `${config.strapi.apiUrl}/api/facturaciones`;
+      // 7E: POST a /api/facturaciones (con checkpoint)
+      if (isStageCompleted(webhook, 'strapi_facturacion_creation')) {
+        // Cargar desde checkpoint
+        const stageData = getStageData(webhook, 'strapi_facturacion_creation');
+        strapiFacturacionId = stageData.strapiFacturacionId;
+        logger.info(`[Processor] ⏭️  SKIP strapi_facturacion_creation - Facturación ${strapiFacturacionId} ya registrada (cargada desde checkpoint)`);
+        completedStages.strapi_facturacion = true;
+      } else {
+        // Ejecutar stage
+        const strapiUrl = `${config.strapi.apiUrl}/api/facturaciones`;
 
-      const strapiResponse = await axios.post(strapiUrl, { data: facturacionPayload }, {
-        headers: {
-          'Authorization': `Bearer ${config.strapi.apiToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
+        const strapiResponse = await axios.post(strapiUrl, { data: facturacionPayload }, {
+          headers: {
+            'Authorization': `Bearer ${config.strapi.apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        });
 
-      strapiFacturacionId = strapiResponse.data.data?.id || strapiResponse.data.data?.documentId;
+        strapiFacturacionId = strapiResponse.data.data?.id || strapiResponse.data.data?.documentId;
 
-      logger.info(`[Processor] Facturación registrada en Strapi - ID: ${strapiFacturacionId}`);
-      completedStages.strapi_facturacion = true;
+        logger.info(`[Processor] Facturación registrada en Strapi - ID: ${strapiFacturacionId}`);
+        completedStages.strapi_facturacion = true;
 
-      // LOG: Facturación creada en Strapi
-      await WebhookLog.create({
-        webhook_id: webhookId,
-        stage: 'strapi_facturacion_creation',
-        status: 'success',
-        details: `Facturación registrada en Strapi - ID: ${strapiFacturacionId}, Acuerdo: ${acuerdo}, Paz y salvo: ${pazYSalvo}, Comercial: ${paymentLinkData.salesRep} (ID: ${comercialId}), Producto: ${paymentLinkData.product} (ID: ${productoId})`,
-        request_payload: facturacionPayload,
-        response_data: strapiResponse.data
-      });
+        // LOG: Facturación creada en Strapi
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'strapi_facturacion_creation',
+          status: 'success',
+          details: `Facturación registrada en Strapi - ID: ${strapiFacturacionId}, Acuerdo: ${acuerdo}, Paz y salvo: ${pazYSalvo}, Comercial: ${paymentLinkData.salesRep} (ID: ${comercialId}), Producto: ${paymentLinkData.product} (ID: ${productoId})`,
+          request_payload: facturacionPayload,
+          response_data: strapiResponse.data
+        });
 
-      // NOTIFICACIÓN PASO 7: Strapi
+        // CHECKPOINT: Guardar facturación de Strapi
+        await saveCheckpoint(webhook, 'strapi_facturacion_creation', {
+          strapiFacturacionId: strapiFacturacionId,
+          acuerdo: acuerdo,
+          pazYSalvo: pazYSalvo,
+          comercialId: comercialId,
+          productoId: productoId
+        });
+      } // Fin del else de strapi_facturacion_creation
+
+      // NOTIFICACIÓN PASO 7: Strapi (fuera del else, se ejecuta siempre)
       const paso7Duration = Date.now() - stepTimestamps.paso7;
 
       await notificationService.notifyStep(9, 'REGISTRO STRAPI + CARTERAS', {

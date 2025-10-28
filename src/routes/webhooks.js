@@ -12,21 +12,21 @@ router.post('/', validateWebhook, webhookController.receiveWebhook);
 
 /**
  * POST /api/webhooks/:id/retry
- * ⚠️ TEMPORALMENTE DESHABILITADO - Sistema de checkpoints incompleto
  * Reintentar webhook usando checkpoints (no repite stages completados)
+ *
+ * ⚠️ IMPORTANTE: Solo stages críticos tienen checkpoint implementado:
+ * - ✅ invoice_extraction
+ * - ✅ fr360_query
+ * - ✅ callbell_notification (NO duplica WhatsApp)
+ * - ✅ membership_creation (NO duplica membresías)
+ * - ✅ worldoffice_invoice_creation (NO duplica facturas)
+ * - ✅ strapi_facturacion_creation (NO duplica registros)
+ * - ⚠️ Otros stages se RE-EJECUTARÁN (CRM, WO customer, accounting, etc.)
+ *
  * Body: { force_restart: false, skip_stages: [], max_retries: 3 }
  * Requiere: Authorization: Bearer <token>
  */
-router.post('/:id/retry', authenticate, (req, res) => {
-  res.status(503).json({
-    success: false,
-    error: 'RETRY TEMPORALMENTE DESHABILITADO',
-    reason: 'Sistema de checkpoints incompleto - solo 4 de 10 stages tienen checkpoint',
-    risk: 'Usar retry puede causar duplicación de facturas y registros',
-    status: 'En desarrollo - agregar checkpoints a stages faltantes',
-    eta: 'Disponible después de implementar checkpoints completos'
-  });
-});
+router.post('/:id/retry', authenticate, webhookController.retryWebhook);
 
 /**
  * GET /api/webhooks/recent

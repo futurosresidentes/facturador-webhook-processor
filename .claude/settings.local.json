@@ -12,7 +12,8 @@
       "Bash(git push)",
       "Bash(curl:*)",
       "Bash(python -m json.tool:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
