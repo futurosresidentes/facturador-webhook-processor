@@ -210,7 +210,13 @@ async function editWebhook(req, res) {
       'response',
       'status',
       'current_stage',
-      'last_completed_stage'
+      'last_completed_stage',
+      'processing_context',
+      'completed_stages',
+      'failed_stage',
+      'retry_count',
+      'last_retry_at',
+      'is_retriable'
     ];
 
     // Filtrar solo campos permitidos
