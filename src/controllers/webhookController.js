@@ -426,7 +426,7 @@ async function listWebhooks(req, res) {
       include: [{
         model: WebhookLog,
         as: 'logs',
-        attributes: ['id', 'stage', 'status', 'details', 'created_at'],
+        attributes: ['id', 'stage', 'status', 'details', 'request_payload', 'response_data', 'error_message', 'created_at'],
         required: false
       }],
       order: [
@@ -459,6 +459,9 @@ async function listWebhooks(req, res) {
           logsByStatus[log.status].push({
             stage: log.stage,
             details: log.details,
+            request_payload: log.request_payload,
+            response_data: log.response_data,
+            error_message: log.error_message,
             timestamp: log.created_at
           });
         }
