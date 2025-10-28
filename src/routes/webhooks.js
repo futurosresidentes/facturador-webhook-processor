@@ -56,6 +56,15 @@ router.get('/stage/:stage', authenticate, webhookController.getWebhooksByStage);
 router.get('/', authenticate, webhookController.listWebhooks);
 
 /**
+ * GET /api/webhooks/:id/logs/structured
+ * Obtiene logs estructurados con resumen y timeline
+ * Query params:
+ *   ?include_raw=true - Incluye logs raw completos
+ * Requiere: Authorization: Bearer <token>
+ */
+router.get('/:id/logs/structured', authenticate, webhookController.getStructuredLogs);
+
+/**
  * GET /api/webhooks/:id/logs
  * Obtiene los logs detallados de procesamiento de un webhook
  * Requiere: Authorization: Bearer <token>

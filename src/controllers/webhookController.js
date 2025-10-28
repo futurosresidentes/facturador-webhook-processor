@@ -796,6 +796,113 @@ async function getWebhookLogs(req, res) {
 }
 
 /**
+ * Obtiene logs estructurados de un webhook con resumen y timeline
+ * GET /api/webhooks/:id/logs/structured
+ */
+async function getStructuredLogs(req, res) {
+  try {
+    const { id } = req.params;
+
+    const webhook = await Webhook.findByPk(id, {
+      include: [
+        {
+          association: 'logs',
+          order: [['created_at', 'ASC']]
+        }
+      ]
+    });
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    // Calcular resumen
+    const logs = webhook.logs || [];
+    const startLog = logs.find(l => l.stage === 'started');
+    const endLog = logs.find(l => l.stage === 'completed');
+
+    const totalDuration = startLog && endLog
+      ? new Date(endLog.created_at) - new Date(startLog.created_at)
+      : null;
+
+    const statusCounts = {
+      success: logs.filter(l => l.status === 'success').length,
+      error: logs.filter(l => l.status === 'error').length,
+      warning: logs.filter(l => l.status === 'warning').length,
+      processing: logs.filter(l => l.status === 'processing').length
+    };
+
+    // Agrupar logs por stage (timeline)
+    const stageMap = new Map();
+    logs.forEach(log => {
+      if (!stageMap.has(log.stage)) {
+        stageMap.set(log.stage, []);
+      }
+      stageMap.get(log.stage).push(log);
+    });
+
+    // Crear timeline con duración de cada stage
+    const timeline = [];
+    const uniqueStages = ['started', 'invoice_extraction', 'fr360_query', 'callbell_notification',
+                          'membership_creation', 'crm_management', 'worldoffice_customer',
+                          'worldoffice_invoice_creation', 'worldoffice_invoice_accounting',
+                          'worldoffice_dian_emission', 'strapi_facturacion_creation', 'completed'];
+
+    uniqueStages.forEach(stage => {
+      const stageLogs = stageMap.get(stage) || [];
+      if (stageLogs.length > 0) {
+        const firstLog = stageLogs[0];
+        const lastLog = stageLogs[stageLogs.length - 1];
+        const duration = new Date(lastLog.created_at) - new Date(firstLog.created_at);
+
+        timeline.push({
+          stage,
+          status: lastLog.status,
+          duration_ms: duration,
+          timestamp: firstLog.created_at,
+          details: lastLog.details,
+          has_error: stageLogs.some(l => l.status === 'error')
+        });
+      }
+    });
+
+    // Respuesta estructurada
+    res.json({
+      success: true,
+      webhook: {
+        id: webhook.id,
+        ref_payco: webhook.ref_payco,
+        status: webhook.status,
+        product: webhook.product,
+        amount: webhook.amount,
+        customer_email: webhook.customer_email
+      },
+      summary: {
+        total_logs: logs.length,
+        total_steps: timeline.length,
+        duration_ms: totalDuration,
+        duration_seconds: totalDuration ? (totalDuration / 1000).toFixed(2) : null,
+        status_breakdown: statusCounts,
+        completed: webhook.status === 'completed',
+        has_errors: statusCounts.error > 0
+      },
+      timeline,
+      raw_logs: req.query.include_raw === 'true' ? logs : undefined
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error obteniendo logs estructurados:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * Obtiene estadísticas de webhooks
  */
 async function getWebhookStats(_req, res) {
@@ -1180,6 +1287,7 @@ module.exports = {
   getWebhook,
   listWebhooks,
   getWebhookLogs,
+  getStructuredLogs,
   getWebhookStats,
   getIncompleteWebhooks,
   getWebhooksByStage,

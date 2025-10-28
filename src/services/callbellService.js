@@ -180,7 +180,7 @@ async function sendPaymentTemplate(data) {
     return {
       success: true,
       phone: phoneFormatted,
-      messageId: response.data?.uuid || response.data?.id,
+      messageId: response.data?.message?.uuid || response.data?.uuid || response.data?.id,
       sentAt: new Date().toISOString(),
       response: response.data
     };
