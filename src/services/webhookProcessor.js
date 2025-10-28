@@ -404,18 +404,29 @@ async function processWebhook(webhookId) {
     }
 
     // STAGE 4: Registrar búsqueda/creación de contacto en CRM
-    stepTimestamps.paso4 = Date.now();
-    await WebhookLog.create({
-      webhook_id: webhookId,
-      stage: 'crm_upsert',
-      status: 'processing',
-      details: `Buscando o creando contacto en CRM: ${paymentLinkData.email}`
-    });
+    let contact, crmAction;
 
-    // Buscar o crear contacto en ActiveCampaign
-    const crmResult = await crmService.createOrUpdateContact(paymentLinkData, webhook);
-    const contact = crmResult.contact;
-    const crmAction = crmResult.action;
+    if (isStageCompleted(webhook, 'crm_management')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'crm_management');
+      contact = stageData.contact;
+      crmAction = stageData.action;
+      logger.info(`[Processor] ⏭️  SKIP crm_management - Contacto CRM ID ${contact.id} ya gestionado (cargado desde checkpoint)`);
+      completedStages.crm = true;
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso4 = Date.now();
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'crm_upsert',
+        status: 'processing',
+        details: `Buscando o creando contacto en CRM: ${paymentLinkData.email}`
+      });
+
+      // Buscar o crear contacto en ActiveCampaign
+      const crmResult = await crmService.createOrUpdateContact(paymentLinkData, webhook);
+      contact = crmResult.contact;
+      crmAction = crmResult.action;
 
     logger.info(`[Processor] Contacto ${crmAction} con CRM ID: ${contact.id}`);
 
@@ -512,51 +523,67 @@ async function processWebhook(webhookId) {
       }
     });
 
-    // CHECKPOINT 4: Guardar contacto del CRM
-    await saveCheckpoint(webhook, 'crm_management', {
-      contact: {
-        id: contact.id,
-        email: paymentLinkData.email,
-        firstName: paymentLinkData.givenName,
-        lastName: paymentLinkData.familyName,
-        phone: paymentLinkData.phone
-      },
-      action: crmAction,
-      tagsApplied: etiquetasAplicadas
-    });
+      // CHECKPOINT 4: Guardar contacto del CRM
+      await saveCheckpoint(webhook, 'crm_management', {
+        contact: {
+          id: contact.id,
+          email: paymentLinkData.email,
+          firstName: paymentLinkData.givenName,
+          lastName: paymentLinkData.familyName,
+          phone: paymentLinkData.phone
+        },
+        action: crmAction,
+        tagsApplied: etiquetasAplicadas
+      });
 
-    // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
-    const paso4Duration = Date.now() - stepTimestamps.paso4;
-    await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
+      // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
+      const paso4Duration = Date.now() - stepTimestamps.paso4;
+      await notificationService.notifyStep(4, 'GESTIÓN CRM (ACTIVECAMPAIGN)', {
       'Email': paymentLinkData.email,
       'Acción': crmAction === 'created' ? '🆕 Contacto creado' : '🔄 Contacto actualizado',
       'CRM ID': contact.id,
       'Nombre': `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
       'Teléfono': paymentLinkData.phone,
       'Cédula': paymentLinkData.identityDocument,
-      'ActivationUrl': membershipResult?.activationUrl ? '✅ Actualizada' : 'N/A',
-      [etiquetasLabel]: etiquetasDetalle,
-      'Resultado': '✅ Contacto gestionado exitosamente'
-    }, paso4Duration);
+        'ActivationUrl': membershipResult?.activationUrl ? '✅ Actualizada' : 'N/A',
+        [etiquetasLabel]: etiquetasDetalle,
+        'Resultado': '✅ Contacto gestionado exitosamente'
+      }, paso4Duration);
+    } // Fin del else de crm_management
 
     // STAGE 5: Buscar o crear cliente en World Office
     // Esto incluirá la búsqueda de ciudad en el caché
-    stepTimestamps.paso5 = Date.now();
-    logger.info(`[Processor] PASO 5: Gestionando cliente en World Office`);
+    let woCustomerResult;
 
-    const woCustomerResult = await worldOfficeService.findOrUpdateCustomer({
-      identityDocument: paymentLinkData.identityDocument,
-      givenName: paymentLinkData.givenName,
-      familyName: paymentLinkData.familyName,
-      email: paymentLinkData.email,
-      phone: paymentLinkData.phone,
-      city: webhook.customer_city,
-      address: webhook.customer_address,
-      comercial: paymentLinkData.comercial
-    });
+    if (isStageCompleted(webhook, 'worldoffice_customer')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'worldoffice_customer');
+      woCustomerResult = {
+        customerId: stageData.customerId,
+        action: stageData.action,
+        comercialWOId: stageData.comercialWOId,
+        customerData: stageData.customerData
+      };
+      logger.info(`[Processor] ⏭️  SKIP worldoffice_customer - Cliente WO ID ${woCustomerResult.customerId} ya gestionado (cargado desde checkpoint)`);
+      completedStages.worldoffice_customer = true;
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso5 = Date.now();
+      logger.info(`[Processor] PASO 5: Gestionando cliente en World Office`);
 
-    logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId} | Comercial WO ID: ${woCustomerResult.comercialWOId}`);
-    completedStages.worldoffice_customer = true;
+      woCustomerResult = await worldOfficeService.findOrUpdateCustomer({
+        identityDocument: paymentLinkData.identityDocument,
+        givenName: paymentLinkData.givenName,
+        familyName: paymentLinkData.familyName,
+        email: paymentLinkData.email,
+        phone: paymentLinkData.phone,
+        city: webhook.customer_city,
+        address: webhook.customer_address,
+        comercial: paymentLinkData.comercial
+      });
+
+      logger.info(`[Processor] Cliente WO: ${woCustomerResult.action} - ID ${woCustomerResult.customerId} | Comercial WO ID: ${woCustomerResult.comercialWOId}`);
+      completedStages.worldoffice_customer = true;
 
     // LOG PASO 5: Cliente World Office gestionado
     const customerActionText = woCustomerResult.action === 'created' ? 'creado' :
@@ -609,11 +636,20 @@ async function processWebhook(webhookId) {
       'Ciudad a usar en WO': `${cityUsed} (ID: ${woCustomerResult.customerData?.cityId || 'N/A'})`,
       'Dirección': webhook.customer_address || 'N/A',
       'Acción': actionText,
-      '🆔 ID Cliente WO': woCustomerResult.customerId,
-      'Comercial': paymentLinkData.comercial || 'N/A',
-      '🆔 ID Comercial WO': woCustomerResult.comercialWOId,
-      'Resultado': '✅ Cliente gestionado exitosamente'
-    }, paso5Duration);
+        '🆔 ID Cliente WO': woCustomerResult.customerId,
+        'Comercial': paymentLinkData.comercial || 'N/A',
+        '🆔 ID Comercial WO': woCustomerResult.comercialWOId,
+        'Resultado': '✅ Cliente gestionado exitosamente'
+      }, paso5Duration);
+
+      // CHECKPOINT 5: Guardar cliente de WorldOffice
+      await saveCheckpoint(webhook, 'worldoffice_customer', {
+        customerId: woCustomerResult.customerId,
+        action: woCustomerResult.action,
+        comercialWOId: woCustomerResult.comercialWOId,
+        customerData: woCustomerResult.customerData
+      });
+    } // Fin del else de worldoffice_customer
 
     // STAGE 6: FACTURACIÓN EN WORLD OFFICE (Crear + Contabilizar + Emitir DIAN)
     logger.info(`[Processor] PASO 6: Facturando en World Office`);
@@ -792,59 +828,101 @@ async function processWebhook(webhookId) {
     } // Fin del else de worldoffice_invoice_creation
 
     // PASO 6B: Contabilizar factura
-    stepTimestamps.paso6b = Date.now();
-
-    try {
-      accountingResult = await worldOfficeService.accountInvoice(invoiceResult.documentoId);
+    if (isStageCompleted(webhook, 'worldoffice_invoice_accounting')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'worldoffice_invoice_accounting');
+      accountingResult = {
+        status: stageData.status,
+        accountingDate: stageData.accountingDate,
+        simulado: stageData.simulado || false
+      };
+      logger.info(`[Processor] ⏭️  SKIP worldoffice_invoice_accounting - Factura ${invoiceResult.numeroFactura} ya contabilizada (cargada desde checkpoint)`);
       completedStages.worldoffice_accounting = true;
-      logger.info(`[Processor] Factura contabilizada - Status: ${accountingResult.status}`);
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso6b = Date.now();
 
-      // LOG PASO 6B: Factura contabilizada
-      await WebhookLog.create({
-        webhook_id: webhookId,
-        stage: 'worldoffice_invoice_accounting',
-        status: 'success',
-        details: `Factura contabilizada ${accountingResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, Status: ${accountingResult.status}, Fecha: ${accountingResult.accountingDate}`,
-        request_payload: { documentoId: invoiceResult.documentoId },
-        response_data: {
+      try {
+        accountingResult = await worldOfficeService.accountInvoice(invoiceResult.documentoId);
+        completedStages.worldoffice_accounting = true;
+        logger.info(`[Processor] Factura contabilizada - Status: ${accountingResult.status}`);
+
+        // LOG PASO 6B: Factura contabilizada
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'worldoffice_invoice_accounting',
+          status: 'success',
+          details: `Factura contabilizada ${accountingResult.simulado ? '(TESTING)' : '(PRODUCCIÓN)'} - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}, Status: ${accountingResult.status}, Fecha: ${accountingResult.accountingDate}`,
+          request_payload: { documentoId: invoiceResult.documentoId },
+          response_data: {
+            status: accountingResult.status,
+            accountingDate: accountingResult.accountingDate,
+            simulado: accountingResult.simulado
+          }
+        });
+
+        const paso6bDuration = Date.now() - stepTimestamps.paso6b;
+        const modoContabilizacion = accountingResult.simulado ? '🟡 MODO TESTING - Contabilización simulada' : '🟢 MODO PRODUCCIÓN - Contabilización real';
+
+        await notificationService.notifyStep(7, 'CONTABILIZACIÓN DE FACTURA (WORLD OFFICE)', {
+          'Documento ID': invoiceResult.documentoId,
+          'Número factura': invoiceResult.numeroFactura,
+          'Status': accountingResult.status,
+          'Fecha contabilización': accountingResult.accountingDate,
+          'Modo': modoContabilizacion,
+          'Resultado': '✅ Factura contabilizada exitosamente'
+        }, paso6bDuration);
+
+        // CHECKPOINT 6B: Guardar resultado de contabilización
+        await saveCheckpoint(webhook, 'worldoffice_invoice_accounting', {
+          documentoId: invoiceResult.documentoId,
+          numeroFactura: invoiceResult.numeroFactura,
           status: accountingResult.status,
           accountingDate: accountingResult.accountingDate,
-          simulado: accountingResult.simulado
-        }
-      });
+          simulado: accountingResult.simulado || false
+        });
 
-      const paso6bDuration = Date.now() - stepTimestamps.paso6b;
-      const modoContabilizacion = accountingResult.simulado ? '🟡 MODO TESTING - Contabilización simulada' : '🟢 MODO PRODUCCIÓN - Contabilización real';
+      } catch (error) {
+        logger.error(`[Processor] Error contabilizando factura: ${error.message}`);
 
-      await notificationService.notifyStep(7, 'CONTABILIZACIÓN DE FACTURA (WORLD OFFICE)', {
-        'Documento ID': invoiceResult.documentoId,
-        'Número factura': invoiceResult.numeroFactura,
-        'Status': accountingResult.status,
-        'Fecha contabilización': accountingResult.accountingDate,
-        'Modo': modoContabilizacion,
-        'Resultado': '✅ Factura contabilizada exitosamente'
-      }, paso6bDuration);
+        // LOG ERROR PASO 6B: Error contabilizando factura
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'worldoffice_invoice_accounting',
+          status: 'error',
+          details: `Error contabilizando factura - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
+          error_message: error.message
+        });
 
-    } catch (error) {
-      logger.error(`[Processor] Error contabilizando factura: ${error.message}`);
-
-      // LOG ERROR PASO 6B: Error contabilizando factura
-      await WebhookLog.create({
-        webhook_id: webhookId,
-        stage: 'worldoffice_invoice_accounting',
-        status: 'error',
-        details: `Error contabilizando factura - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
-        error_message: error.message
-      });
-
-      throw error;
-    }
+        throw error;
+      }
+    } // Fin del else de worldoffice_invoice_accounting
 
     // PASO 6C: Emitir ante DIAN
-    stepTimestamps.paso6c = Date.now();
+    if (isStageCompleted(webhook, 'worldoffice_dian_emission')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'worldoffice_dian_emission');
+      dianResult = {
+        skipped: stageData.skipped || false,
+        warning: stageData.warning || false,
+        cufe: stageData.cufe,
+        dianStatus: stageData.dianStatus,
+        emittedAt: stageData.emittedAt,
+        simulado: stageData.simulado || false
+      };
 
-    try {
-      dianResult = await worldOfficeService.emitDianInvoice(invoiceResult.documentoId);
+      const skipReason = dianResult.skipped ? 'desactivada' : dianResult.warning ? 'ya emitida (409)' : 'ya emitida';
+      logger.info(`[Processor] ⏭️  SKIP worldoffice_dian_emission - Emisión DIAN ${skipReason} (cargada desde checkpoint)`);
+
+      if (!dianResult.skipped && !dianResult.warning) {
+        completedStages.worldoffice_dian = true;
+      }
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso6c = Date.now();
+
+      try {
+        dianResult = await worldOfficeService.emitDianInvoice(invoiceResult.documentoId);
 
       if (dianResult.skipped) {
         logger.info(`[Processor] Emisión DIAN omitida (desactivada en configuración)`);
@@ -922,22 +1000,35 @@ async function processWebhook(webhookId) {
         'Resultado': statusDian
       }, paso6cDuration);
 
-    } catch (error) {
-      logger.error(`[Processor] Error emitiendo factura ante DIAN: ${error.message}`);
+        // CHECKPOINT 6C: Guardar resultado de emisión DIAN
+        await saveCheckpoint(webhook, 'worldoffice_dian_emission', {
+          documentoId: invoiceResult.documentoId,
+          numeroFactura: invoiceResult.numeroFactura,
+          skipped: dianResult.skipped || false,
+          warning: dianResult.warning || false,
+          cufe: dianResult.cufe,
+          dianStatus: dianResult.dianStatus,
+          emittedAt: dianResult.emittedAt,
+          simulado: dianResult.simulado || false
+        });
 
-      // LOG ERROR PASO 6C: Error en emisión DIAN
-      await WebhookLog.create({
-        webhook_id: webhookId,
-        stage: 'worldoffice_dian_emission',
-        status: 'error',
-        details: `Error emitiendo factura ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
-        request_payload: { documentoId: invoiceResult.documentoId },
-        error_message: error.message
-      });
+      } catch (error) {
+        logger.error(`[Processor] Error emitiendo factura ante DIAN: ${error.message}`);
 
-      // No lanzar error, continuar proceso (emisión DIAN no es crítica)
-      logger.warn(`[Processor] Continuando proceso sin emisión DIAN`);
-    }
+        // LOG ERROR PASO 6C: Error en emisión DIAN
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'worldoffice_dian_emission',
+          status: 'error',
+          details: `Error emitiendo factura ante DIAN - Doc ID: ${invoiceResult.documentoId}, Nro: ${invoiceResult.numeroFactura}`,
+          request_payload: { documentoId: invoiceResult.documentoId },
+          error_message: error.message
+        });
+
+        // No lanzar error, continuar proceso (emisión DIAN no es crítica)
+        logger.warn(`[Processor] Continuando proceso sin emisión DIAN`);
+      }
+    } // Fin del else de worldoffice_dian_emission
 
     // ===================================================================
     // PASO 7: REGISTRO EN STRAPI + ACTUALIZACIÓN DE CARTERAS
