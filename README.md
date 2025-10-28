@@ -110,7 +110,7 @@ npm start
 ## Testing
 
 ```bash
-node test-webhook.js
+node scripts/test-webhook.js
 ```
 
 ## Productos Soportados

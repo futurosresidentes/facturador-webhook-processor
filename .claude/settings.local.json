@@ -13,7 +13,10 @@
       "Bash(curl:*)",
       "Bash(python -m json.tool:*)",
       "Bash(python -c:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(find:*)",
+      "Bash(test:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
