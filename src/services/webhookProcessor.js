@@ -281,17 +281,23 @@ async function processWebhook(webhookId) {
 
     logger.info(`[Processor] Contacto ${crmAction} con CRM ID: ${contact.id}`);
 
-    // Guardar en BD local (si no existe)
-    let localContact = await Contact.findOne({ where: { email: paymentLinkData.email } });
-    if (!localContact) {
-      localContact = await Contact.create({
+    // Guardar en BD local (usar findOrCreate para evitar duplicados por case-sensitivity)
+    const emailLowercase = paymentLinkData.email.toLowerCase();
+    const [localContact, created] = await Contact.findOrCreate({
+      where: { email: emailLowercase },
+      defaults: {
         crm_id: contact.id,
-        email: paymentLinkData.email,
+        email: emailLowercase,
         name: `${paymentLinkData.givenName || ''} ${paymentLinkData.familyName || ''}`.trim(),
         phone: paymentLinkData.phone,
         identity_document: paymentLinkData.identityDocument
-      });
+      }
+    });
+
+    if (created) {
       logger.info(`[Processor] Contacto guardado en BD local: ${localContact.id}`);
+    } else {
+      logger.info(`[Processor] Contacto ya existía en BD local: ${localContact.id}`);
     }
 
     // Si hay activationUrl, actualizar en CRM
