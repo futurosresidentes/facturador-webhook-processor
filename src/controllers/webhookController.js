@@ -480,6 +480,14 @@ async function listWebhooks(req, res) {
         status: webhookData.status,
         current_stage: webhookData.current_stage,
         last_completed_stage: webhookData.last_completed_stage,
+        raw_data: webhookData.raw_data,
+        // Campos de checkpoint (nuevos)
+        processing_context: webhookData.processing_context || {},
+        completed_stages: webhookData.completed_stages || [],
+        failed_stage: webhookData.failed_stage,
+        retry_count: webhookData.retry_count || 0,
+        last_retry_at: webhookData.last_retry_at,
+        is_retriable: webhookData.is_retriable !== undefined ? webhookData.is_retriable : true,
         created_at: webhookData.created_at,
         updated_at: webhookData.updated_at,
         logs: {

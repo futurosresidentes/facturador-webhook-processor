@@ -19,6 +19,21 @@ router.post('/', validateWebhook, webhookController.receiveWebhook);
 router.post('/:id/retry', authenticate, webhookController.retryWebhook);
 
 /**
+ * GET /api/webhooks/recent
+ * Alias de GET /api/webhooks?limit=100&order=created_at&dir=DESC
+ * Retorna los últimos 100 webhooks ordenados por fecha (más reciente primero)
+ * Incluye logs resumidos por webhook
+ * Requiere: Authorization: Bearer <token>
+ */
+router.get('/recent', authenticate, (req, res, next) => {
+  // Forzar parámetros para "recent"
+  req.query.limit = req.query.limit || '100';
+  req.query.order = req.query.order || 'created_at';
+  req.query.dir = req.query.dir || 'DESC';
+  next();
+}, webhookController.listWebhooks);
+
+/**
  * GET /api/webhooks
  * Lista todos los webhooks con logs (o filtra por parámetros)
  * Query params:
