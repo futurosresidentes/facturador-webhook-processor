@@ -4,28 +4,6 @@ const cacheController = require('../controllers/cacheController');
 const authenticate = require('../middleware/authenticate');
 
 /**
- * GET /api/cache/status
- * Obtiene el estado actual del caché (comerciales y productos de Strapi)
- *
- * Response:
- * {
- *   "success": true,
- *   "cache": {
- *     "comerciales": {
- *       "count": 15,
- *       "lastUpdate": "2025-10-25T12:00:00.000Z",
- *       "ageInMinutes": 45,
- *       "ttlInHours": 24,
- *       "isExpired": false,
- *       "nextRefresh": "2025-10-26T12:00:00.000Z"
- *     },
- *     "productos": { ... }
- *   }
- * }
- */
-router.get('/status', authenticate, cacheController.getCacheStatus);
-
-/**
  * POST /api/cache/refresh
  * Fuerza la actualización del caché
  *

@@ -45,41 +45,6 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * GET /api/feature-flags/:key
- * Obtener un feature flag específico
- */
-router.get('/:key', async (req, res) => {
-  try {
-    const { key } = req.params;
-    const flag = await FeatureFlag.findOne({ where: { key } });
-
-    if (!flag) {
-      return res.status(404).json({
-        success: false,
-        error: `Feature flag '${key}' no encontrado`
-      });
-    }
-
-    res.json({
-      success: true,
-      flag: {
-        key: flag.key,
-        value: flag.value,
-        description: flag.description,
-        updated_by: flag.updated_by,
-        updated_at: flag.updated_at
-      }
-    });
-  } catch (error) {
-    logger.error('[FeatureFlags API] Error obteniendo flag:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error obteniendo feature flag'
-    });
-  }
-});
-
-/**
  * PUT /api/feature-flags/:key
  * Actualizar un feature flag (REQUIERE API KEY)
  * Headers: Authorization: Bearer YOUR_API_KEY
@@ -118,30 +83,6 @@ router.put('/:key', apiKeyAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error actualizando feature flag'
-    });
-  }
-});
-
-/**
- * POST /api/feature-flags/invalidate-cache
- * Invalidar cache de feature flags (forzar recarga) - REQUIERE API KEY
- * Headers: Authorization: Bearer YOUR_API_KEY
- */
-router.post('/invalidate-cache', apiKeyAuth, async (req, res) => {
-  try {
-    FeatureFlag.invalidateCache();
-
-    logger.info('[FeatureFlags API] Cache invalidado');
-
-    res.json({
-      success: true,
-      message: 'Cache de feature flags invalidado'
-    });
-  } catch (error) {
-    logger.error('[FeatureFlags API] Error invalidando cache:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error invalidando cache'
     });
   }
 });

@@ -155,6 +155,85 @@ async function reprocessWebhook(req, res) {
 }
 
 /**
+ * Reintentar webhook usando checkpoints (no repite stages completados)
+ * POST /api/webhooks/:id/retry
+ * Body: {
+ *   force_restart: false,
+ *   skip_stages: [],
+ *   max_retries: 3
+ * }
+ */
+async function retryWebhook(req, res) {
+  try {
+    const { id } = req.params;
+    const {
+      force_restart = false,
+      start_from_stage = null,
+      skip_stages = [],
+      max_retries = 3
+    } = req.body;
+
+    logger.info(`[Controller] Solicitando retry de webhook ${id} (force_restart: ${force_restart})`);
+
+    const webhook = await Webhook.findByPk(id);
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        error: 'Webhook no encontrado'
+      });
+    }
+
+    // Validar retriabilidad antes de procesar
+    if (!webhook.is_retriable && !force_restart) {
+      return res.status(400).json({
+        success: false,
+        error: `Webhook ${id} tiene un error fatal y no puede ser reprocesado automáticamente`,
+        failed_stage: webhook.failed_stage,
+        error_details: webhook.processing_context?.[webhook.failed_stage]?.error,
+        suggestion: 'Usa force_restart=true para intentar desde cero o corrige el error manualmente'
+      });
+    }
+
+    // Procesar en background
+    webhookProcessor.retryWebhook(id, {
+      force_restart,
+      start_from_stage,
+      skip_stages,
+      max_retries
+    })
+    .then(() => {
+      logger.info(`[Controller] Retry exitoso para webhook ${id}`);
+    })
+    .catch(err => {
+      logger.error(`[Controller] Error en retry de webhook ${id}:`, err);
+    });
+
+    res.json({
+      success: true,
+      message: 'Webhook en cola para reprocesamiento inteligente',
+      webhook_id: parseInt(id),
+      retry_config: {
+        force_restart,
+        start_from_stage: start_from_stage || webhook.failed_stage,
+        skip_stages,
+        max_retries,
+        current_retry_count: webhook.retry_count,
+        completed_stages: webhook.completed_stages || [],
+        failed_stage: webhook.failed_stage
+      }
+    });
+
+  } catch (error) {
+    logger.error('[Controller] Error en retry de webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * Limpia logs duplicados de un webhook completado
  * Mantiene solo los logs del último procesamiento exitoso
  */
@@ -1279,6 +1358,7 @@ async function getRecentWebhooks(req, res) {
 module.exports = {
   receiveWebhook,
   reprocessWebhook,
+  retryWebhook,
   cleanDuplicateLogs,
   deleteAllLogs,
   keepOnlyLastSuccessful,

@@ -9,7 +9,9 @@
       "Bash(git restore:*)",
       "Read(//c/Sitios/FR360/**)",
       "Bash(git add:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(curl:*)",
+      "Bash(python -m json.tool:*)"
     ],
     "deny": [],
     "ask": []

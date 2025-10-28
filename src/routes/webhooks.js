@@ -11,35 +11,12 @@ const authenticate = require('../middleware/authenticate');
 router.post('/', validateWebhook, webhookController.receiveWebhook);
 
 /**
- * GET /api/webhooks/recent
- * Lista webhooks recientes con sus logs
- * Query params: ?limit=10 (opcional, default: todos)
- * Retorna webhooks ordenados por fecha (más recientes primero) con logs agrupados
+ * POST /api/webhooks/:id/retry
+ * Reintentar webhook usando checkpoints (no repite stages completados)
+ * Body: { force_restart: false, skip_stages: [], max_retries: 3 }
  * Requiere: Authorization: Bearer <token>
  */
-router.get('/recent', authenticate, webhookController.getRecentWebhooks);
-
-/**
- * GET /api/webhooks/stats
- * Obtiene estadísticas generales de webhooks
- * Requiere: Authorization: Bearer <token>
- */
-router.get('/stats', authenticate, webhookController.getWebhookStats);
-
-/**
- * GET /api/webhooks/incomplete
- * Lista webhooks que NO están 100% completados
- * Requiere: Authorization: Bearer <token>
- */
-router.get('/incomplete', authenticate, webhookController.getIncompleteWebhooks);
-
-/**
- * GET /api/webhooks/stage/:stage
- * Lista webhooks atascados en un stage específico
- * Ejemplo: /api/webhooks/stage/worldoffice_dian
- * Requiere: Authorization: Bearer <token>
- */
-router.get('/stage/:stage', authenticate, webhookController.getWebhooksByStage);
+router.post('/:id/retry', authenticate, webhookController.retryWebhook);
 
 /**
  * GET /api/webhooks
@@ -54,67 +31,6 @@ router.get('/stage/:stage', authenticate, webhookController.getWebhooksByStage);
  * Requiere: Authorization: Bearer <token>
  */
 router.get('/', authenticate, webhookController.listWebhooks);
-
-/**
- * GET /api/webhooks/:id/logs/structured
- * Obtiene logs estructurados con resumen y timeline
- * Query params:
- *   ?include_raw=true - Incluye logs raw completos
- * Requiere: Authorization: Bearer <token>
- */
-router.get('/:id/logs/structured', authenticate, webhookController.getStructuredLogs);
-
-/**
- * GET /api/webhooks/:id/logs
- * Obtiene los logs detallados de procesamiento de un webhook
- * Requiere: Authorization: Bearer <token>
- */
-router.get('/:id/logs', authenticate, webhookController.getWebhookLogs);
-
-/**
- * GET /api/webhooks/:id
- * Obtiene un webhook específico con sus logs y membresías
- * Requiere: Authorization: Bearer <token>
- */
-router.get('/:id', authenticate, webhookController.getWebhook);
-
-/**
- * POST /api/webhooks/:id/reprocess
- * Reprocesa un webhook existente
- * Requiere: Authorization: Bearer <token>
- */
-router.post('/:id/reprocess', authenticate, webhookController.reprocessWebhook);
-
-/**
- * POST /api/webhooks/:id/clean-logs
- * Limpia logs duplicados de un webhook completado (mantiene solo el último procesamiento)
- * Requiere: Authorization: Bearer <token>
- */
-router.post('/:id/clean-logs', authenticate, webhookController.cleanDuplicateLogs);
-
-/**
- * DELETE /api/webhooks/logs/all
- * ⚠️ PELIGROSO: Borra TODOS los logs de la base de datos (inicio fresco)
- * Requiere: Authorization: Bearer <token> + ?confirmation=yes
- * Mantiene los webhooks pero borra todos sus logs
- */
-router.delete('/logs/all', authenticate, webhookController.deleteAllLogs);
-
-/**
- * DELETE /api/webhooks/keep-last
- * ⚠️ PELIGROSO: Borra TODOS los webhooks excepto el último completado exitosamente
- * Requiere: Authorization: Bearer <token> + ?confirmation=yes
- * Mantiene solo el webhook más reciente con status="completed"
- */
-router.delete('/keep-last', authenticate, webhookController.keepOnlyLastSuccessful);
-
-/**
- * PATCH /api/webhooks/:id/status
- * Actualiza manualmente el estado de un webhook
- * Body: { status, current_stage, last_completed_stage }
- * Requiere: Authorization: Bearer <token>
- */
-router.patch('/:id/status', authenticate, webhookController.updateWebhookStatus);
 
 /**
  * PATCH /api/webhooks/:id

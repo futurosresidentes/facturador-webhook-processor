@@ -65,6 +65,42 @@ const Webhook = sequelize.define('Webhook', {
     allowNull: true,
     comment: 'Último stage completado con éxito'
   },
+  processing_context: {
+    type: DataTypes.JSONB,
+    field: 'processing_context',
+    defaultValue: {},
+    comment: 'Stores cached data from each completed stage to avoid re-executing API calls'
+  },
+  completed_stages: {
+    type: DataTypes.JSONB,
+    field: 'completed_stages',
+    defaultValue: [],
+    comment: 'Array of stage names that completed successfully (checkpoint list)'
+  },
+  failed_stage: {
+    type: DataTypes.STRING(100),
+    field: 'failed_stage',
+    allowNull: true,
+    comment: 'The exact stage where processing failed'
+  },
+  retry_count: {
+    type: DataTypes.INTEGER,
+    field: 'retry_count',
+    defaultValue: 0,
+    comment: 'Number of times this webhook has been retried'
+  },
+  last_retry_at: {
+    type: DataTypes.DATE,
+    field: 'last_retry_at',
+    allowNull: true,
+    comment: 'Timestamp of the last retry attempt'
+  },
+  is_retriable: {
+    type: DataTypes.BOOLEAN,
+    field: 'is_retriable',
+    defaultValue: true,
+    comment: 'Whether this webhook can be retried (false for fatal errors)'
+  },
   raw_data: {
     type: DataTypes.JSONB,
     field: 'raw_data'
@@ -88,7 +124,10 @@ const Webhook = sequelize.define('Webhook', {
     { fields: ['created_at'] },
     { fields: ['customer_email'] },
     { fields: ['current_stage'] },
-    { fields: ['last_completed_stage'] }
+    { fields: ['last_completed_stage'] },
+    { fields: ['failed_stage'] },
+    { fields: ['is_retriable'] },
+    { fields: ['retry_count'] }
   ]
 });
 

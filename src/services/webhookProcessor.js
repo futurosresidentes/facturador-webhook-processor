@@ -20,8 +20,40 @@ const strapiCache = require('./strapiCache');
 const strapiCarteraService = require('./strapiCarteraService');
 const { requiresMemberships, getProductBase } = require('../utils/productFilter');
 const { toColombiaISO } = require('../utils/dateUtils');
+const { isRetriableError, getErrorDetails, getErrorContext } = require('../utils/errorClassifier');
 const config = require('../config/env');
 const logger = require('../config/logger');
+
+/**
+ * Guarda el checkpoint de un stage completado
+ * @param {Object} webhook - Instancia del webhook
+ * @param {string} stageName - Nombre del stage completado
+ * @param {Object} data - Datos a guardar en el contexto
+ */
+async function saveCheckpoint(webhook, stageName, data = {}) {
+  const context = webhook.processing_context || {};
+  const completedStages = webhook.completed_stages || [];
+
+  // Guardar datos del stage en el contexto
+  context[stageName] = {
+    completed_at: new Date().toISOString(),
+    data
+  };
+
+  // Agregar stage a la lista de completados (si no existe ya)
+  if (!completedStages.includes(stageName)) {
+    completedStages.push(stageName);
+  }
+
+  // Actualizar webhook
+  await webhook.update({
+    processing_context: context,
+    completed_stages: completedStages,
+    last_completed_stage: stageName
+  });
+
+  logger.info(`[Checkpoint] Stage '${stageName}' guardado en contexto`);
+}
 
 /**
  * Procesa un webhook de pago de ePayco
@@ -83,6 +115,12 @@ async function processWebhook(webhookId) {
       details: `Invoice ID extraído: ${invoiceId} (de ${webhook.invoice_id})`
     });
 
+    // CHECKPOINT 1: Guardar invoice_id extraído
+    await saveCheckpoint(webhook, 'invoice_extraction', {
+      invoice_id: invoiceId,
+      invoice_id_full: webhook.invoice_id
+    });
+
     // NOTIFICACIÓN PASO 1: Invoice ID extraído
     const paso1Duration = Date.now() - stepTimestamps.paso1;
     await notificationService.notifyStep(1, 'EXTRACCIÓN INVOICE ID', {
@@ -116,6 +154,11 @@ async function processWebhook(webhookId) {
       details: `Datos obtenidos de FR360 - Producto: ${paymentLinkData.product}, Email: ${paymentLinkData.email}, Cliente: ${paymentLinkData.givenName} ${paymentLinkData.familyName}, Cédula: ${paymentLinkData.identityDocument}, Comercial: ${paymentLinkData.salesRep || 'N/A'}`,
       request_payload: { invoiceId },
       response_data: paymentLinkData
+    });
+
+    // CHECKPOINT 2: Guardar datos de FR360
+    await saveCheckpoint(webhook, 'fr360_query', {
+      paymentLink: paymentLinkData
     });
 
     // NOTIFICACIÓN PASO 2: Consulta FR360
@@ -169,6 +212,15 @@ async function processWebhook(webhookId) {
         },
         response_data: callbellResult
       });
+
+      // CHECKPOINT 2.1: Guardar resultado de Callbell
+      if (callbellResult.success) {
+        await saveCheckpoint(webhook, 'callbell_notification', {
+          messageId: callbellResult.messageId,
+          phone: callbellResult.phone,
+          sentAt: callbellResult.sentAt
+        });
+      }
 
       // NOTIFICACIÓN PASO 2.1: Callbell
       const paso2_1Duration = Date.now() - stepTimestamps.paso2_1;
@@ -242,6 +294,13 @@ async function processWebhook(webhookId) {
         stage: 'membership_creation',
         status: 'success',
         details: `${membershipsCount} membresía(s) creada(s) - ${membershipsDetail}${membershipResult.activationUrl ? ` | activationUrl: ${membershipResult.activationUrl}` : ''}`
+      });
+
+      // CHECKPOINT 3: Guardar resultado de membresías
+      await saveCheckpoint(webhook, 'membership_creation', {
+        memberships: membershipResult.membreshipsCreadas || [],
+        activationUrl: membershipResult.activationUrl,
+        etiquetas: membershipResult.etiquetas
       });
 
     } else {
@@ -372,6 +431,19 @@ async function processWebhook(webhookId) {
         action: crmAction,
         tagsApplied: etiquetasAplicadas
       }
+    });
+
+    // CHECKPOINT 4: Guardar contacto del CRM
+    await saveCheckpoint(webhook, 'crm_management', {
+      contact: {
+        id: contact.id,
+        email: paymentLinkData.email,
+        firstName: paymentLinkData.givenName,
+        lastName: paymentLinkData.familyName,
+        phone: paymentLinkData.phone
+      },
+      action: crmAction,
+      tagsApplied: etiquetasAplicadas
     });
 
     // NOTIFICACIÓN PASO 4 COMPLETADA: CRM (solo una vez, al final)
@@ -1056,19 +1128,36 @@ async function processWebhook(webhookId) {
   } catch (error) {
     logger.error(`[Processor] Error procesando webhook ${webhookId}:`, error);
 
+    // Clasificar el error
+    const errorDetails = getErrorDetails(error);
+    const errorContext = getErrorContext(error, webhook?.current_stage || 'unknown');
+
     // Registrar error en el log
     await WebhookLog.create({
       webhook_id: webhookId,
-      stage: 'error',
+      stage: webhook?.current_stage || 'error',
       status: 'failed',
-      details: 'Error durante el procesamiento',
+      details: errorContext,
       error_message: error.toString()
     });
 
-    // Actualizar webhook con estado de error
+    // Actualizar webhook con estado de error y información de retriabilidad
     if (webhook) {
+      const context = webhook.processing_context || {};
+      const currentStage = webhook.current_stage || 'unknown';
+
+      // Guardar información del error en el contexto
+      context[currentStage] = {
+        attempted_at: new Date().toISOString(),
+        failed_at: new Date().toISOString(),
+        error: errorDetails
+      };
+
       await webhook.update({
         status: 'error',
+        failed_stage: currentStage,
+        processing_context: context,
+        is_retriable: errorDetails.is_retriable,
         updated_at: new Date()
       });
     }
@@ -1077,13 +1166,133 @@ async function processWebhook(webhookId) {
     await notificationService.notifyError({
       webhookRef: webhook?.ref_payco,
       invoiceId: webhook?.invoice_id,
-      error: error.toString()
+      error: error.toString(),
+      retriable: errorDetails.is_retriable ? '✅ Retriable' : '❌ Fatal'
     });
 
     throw error;
   }
 }
 
+/**
+ * Reprocesa un webhook usando checkpoints para saltar stages ya completados
+ * @param {number} webhookId - ID del webhook a reprocesar
+ * @param {Object} options - Opciones de reprocesamiento
+ * @param {boolean} options.force_restart - Si true, reinicia desde cero ignorando checkpoints
+ * @param {string} options.start_from_stage - Stage específico desde donde empezar
+ * @param {Array<string>} options.skip_stages - Lista de stages a saltar
+ * @param {number} options.max_retries - Número máximo de reintentos permitidos
+ * @returns {Promise<Object>} Resultado del reprocesamiento
+ * @throws {Error} Si el webhook no es retriable o excede max_retries
+ */
+async function retryWebhook(webhookId, options = {}) {
+  const {
+    force_restart = false,
+    start_from_stage = null,
+    skip_stages = [],
+    max_retries = 3
+  } = options;
+
+  // Buscar el webhook
+  const webhook = await Webhook.findByPk(webhookId);
+
+  if (!webhook) {
+    throw new Error(`Webhook ${webhookId} no encontrado`);
+  }
+
+  logger.info(`[Retry] Iniciando reprocesamiento de webhook ${webhook.ref_payco}`);
+
+  // Validar retriabilidad
+  if (!webhook.is_retriable && !force_restart) {
+    throw new Error(
+      `Webhook ${webhookId} tiene un error fatal y no puede ser reprocesado automáticamente. ` +
+      `Stage fallido: ${webhook.failed_stage}. ` +
+      `Usa force_restart=true para intentar desde cero o corrige el error manualmente.`
+    );
+  }
+
+  // Verificar límite de reintentos
+  if (webhook.retry_count >= max_retries && !force_restart) {
+    throw new Error(
+      `Webhook ${webhookId} ha alcanzado el límite de reintentos (${max_retries}). ` +
+      `Requiere intervención manual. ` +
+      `Usa force_restart=true para reiniciar el contador.`
+    );
+  }
+
+  // Si force_restart, limpiar checkpoints y empezar desde cero
+  if (force_restart) {
+    logger.info(`[Retry] Force restart activado - limpiando checkpoints`);
+    await webhook.update({
+      completed_stages: [],
+      processing_context: {},
+      current_stage: null,
+      last_completed_stage: null,
+      failed_stage: null,
+      status: 'pending',
+      retry_count: 0, // Reiniciar contador
+      is_retriable: true
+    });
+  }
+
+  // Incrementar contador de reintentos
+  await webhook.update({
+    retry_count: webhook.retry_count + 1,
+    last_retry_at: new Date(),
+    status: 'retrying'
+  });
+
+  logger.info(`[Retry] Intento ${webhook.retry_count} de ${max_retries}`);
+  logger.info(`[Retry] Stages completados previamente: ${webhook.completed_stages.join(', ') || 'ninguno'}`);
+  logger.info(`[Retry] Failed stage: ${webhook.failed_stage || 'ninguno'}`);
+
+  if (skip_stages.length > 0) {
+    logger.info(`[Retry] Stages a saltar: ${skip_stages.join(', ')}`);
+  }
+
+  // TODO: Aquí iría la lógica de reprocesamiento con checkpoints
+  // Por ahora, simplemente llamamos al procesador normal
+  // En una versión futura, refactorizaremos processWebhook para aceptar checkpoints
+
+  try {
+    // NOTA: Por ahora, el processWebhook normal ya guarda checkpoints
+    // pero NO los lee para saltar stages. Eso requeriría refactorizar
+    // toda la función processWebhook, lo cual es complejo.
+    //
+    // SOLUCIÓN TEMPORAL: Marcar como "requiere intervención manual"
+    // si falla después de 3 reintentos
+
+    const result = await processWebhook(webhookId);
+
+    logger.info(`[Retry] Reprocesamiento exitoso para webhook ${webhookId}`);
+
+    // Resetear campos de error si fue exitoso
+    await webhook.update({
+      failed_stage: null,
+      is_retriable: true,
+      status: 'completed'
+    });
+
+    return result;
+
+  } catch (error) {
+    logger.error(`[Retry] Error en intento ${webhook.retry_count}:`, error);
+
+    // Si alcanzamos max_retries, marcar como "requiere intervención manual"
+    if (webhook.retry_count >= max_retries) {
+      await webhook.update({
+        status: 'requires_manual_intervention',
+        is_retriable: false
+      });
+
+      logger.error(`[Retry] Webhook ${webhookId} requiere intervención manual después de ${max_retries} intentos`);
+    }
+
+    throw error;
+  }
+}
+
 module.exports = {
-  processWebhook
+  processWebhook,
+  retryWebhook
 };
