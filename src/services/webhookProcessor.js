@@ -56,6 +56,28 @@ async function saveCheckpoint(webhook, stageName, data = {}) {
 }
 
 /**
+ * Verifica si un stage ya fue completado previamente
+ * @param {Object} webhook - Instancia del webhook
+ * @param {string} stageName - Nombre del stage a verificar
+ * @returns {boolean} - true si el stage ya está completado
+ */
+function isStageCompleted(webhook, stageName) {
+  const completedStages = webhook.completed_stages || [];
+  return completedStages.includes(stageName);
+}
+
+/**
+ * Obtiene datos guardados de un stage completado
+ * @param {Object} webhook - Instancia del webhook
+ * @param {string} stageName - Nombre del stage
+ * @returns {Object|null} - Datos del stage o null si no existe
+ */
+function getStageData(webhook, stageName) {
+  const context = webhook.processing_context || {};
+  return context[stageName]?.data || null;
+}
+
+/**
  * Procesa un webhook de pago de ePayco
  * @param {number} webhookId - ID del webhook en la base de datos
  * @returns {Promise<Object>} Resultado del procesamiento con datos del contacto y URL de activación
@@ -78,6 +100,13 @@ async function processWebhook(webhookId) {
 
     logger.info(`[Processor] Procesando webhook ${webhook.ref_payco}`);
 
+    // Verificar si hay checkpoints previos
+    const hasCheckpoints = webhook.completed_stages && webhook.completed_stages.length > 0;
+    if (hasCheckpoints) {
+      logger.info(`[Processor] ✅ Detectados checkpoints previos. Stages completados: ${webhook.completed_stages.join(', ')}`);
+      logger.info(`[Processor] 🔄 Se saltarán stages ya completados`);
+    }
+
     // NOTIFICACIÓN PASO 0: Webhook recibido
     await notificationService.notifyStep(0, 'WEBHOOK RECIBIDO', {
       'Ref Payco': webhook.ref_payco,
@@ -87,7 +116,7 @@ async function processWebhook(webhookId) {
       'Monto': `$${webhook.amount} ${webhook.currency}`,
       'Ciudad': webhook.customer_city || 'N/A',
       'Dirección': webhook.customer_address || 'N/A',
-      'Estado': 'Iniciando procesamiento...'
+      'Estado': hasCheckpoints ? 'Reanudando procesamiento...' : 'Iniciando procesamiento...'
     });
 
     // Registrar inicio del procesamiento
@@ -95,160 +124,210 @@ async function processWebhook(webhookId) {
       webhook_id: webhookId,
       stage: 'started',
       status: 'processing',
-      details: 'Iniciando procesamiento del webhook'
+      details: hasCheckpoints ? 'Reanudando procesamiento desde checkpoints' : 'Iniciando procesamiento del webhook'
     });
 
     // Actualizar estado del webhook a "procesando"
     await webhook.update({ status: 'processing', updated_at: new Date() });
 
     // STAGE 1: Extraer el invoice ID (antes del guión)
-    stepTimestamps.paso1 = Date.now();
-    const invoiceId = webhook.invoice_id.split('-')[0];
-    logger.info(`[Processor] Invoice ID extraído: ${invoiceId}`);
-    completedStages.invoice_extraction = true;
+    let invoiceId;
 
-    // LOG PASO 1: Invoice ID extraído
-    await WebhookLog.create({
-      webhook_id: webhookId,
-      stage: 'invoice_extraction',
-      status: 'success',
-      details: `Invoice ID extraído: ${invoiceId} (de ${webhook.invoice_id})`
-    });
+    if (isStageCompleted(webhook, 'invoice_extraction')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'invoice_extraction');
+      invoiceId = stageData.invoice_id;
+      logger.info(`[Processor] ⏭️ SKIP invoice_extraction - Cargado desde checkpoint: ${invoiceId}`);
+      completedStages.invoice_extraction = true;
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso1 = Date.now();
+      invoiceId = webhook.invoice_id.split('-')[0];
+      logger.info(`[Processor] Invoice ID extraído: ${invoiceId}`);
+      completedStages.invoice_extraction = true;
 
-    // CHECKPOINT 1: Guardar invoice_id extraído
-    await saveCheckpoint(webhook, 'invoice_extraction', {
-      invoice_id: invoiceId,
-      invoice_id_full: webhook.invoice_id
-    });
+      // LOG PASO 1: Invoice ID extraído
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'invoice_extraction',
+        status: 'success',
+        details: `Invoice ID extraído: ${invoiceId} (de ${webhook.invoice_id})`
+      });
 
-    // NOTIFICACIÓN PASO 1: Invoice ID extraído
-    const paso1Duration = Date.now() - stepTimestamps.paso1;
-    await notificationService.notifyStep(1, 'EXTRACCIÓN INVOICE ID', {
-      'Invoice ID completo': webhook.invoice_id,
-      'Invoice ID extraído': invoiceId,
-      'Resultado': '✅ Extracción exitosa'
-    }, paso1Duration);
+      // CHECKPOINT 1: Guardar invoice_id extraído
+      await saveCheckpoint(webhook, 'invoice_extraction', {
+        invoice_id: invoiceId,
+        invoice_id_full: webhook.invoice_id
+      });
 
-    // STAGE 2: Registrar consulta a FR360
-    stepTimestamps.paso2 = Date.now();
-    await WebhookLog.create({
-      webhook_id: webhookId,
-      stage: 'fr360_query',
-      status: 'processing',
-      details: `Consultando invoice ${invoiceId} en FR360 API`
-    });
+      // NOTIFICACIÓN PASO 1: Invoice ID extraído
+      const paso1Duration = Date.now() - stepTimestamps.paso1;
+      await notificationService.notifyStep(1, 'EXTRACCIÓN INVOICE ID', {
+        'Invoice ID completo': webhook.invoice_id,
+        'Invoice ID extraído': invoiceId,
+        'Resultado': '✅ Extracción exitosa'
+      }, paso1Duration);
+    }
 
-    // Obtener datos del payment link desde FR360
-    const paymentLinkData = await fr360Service.getPaymentLink(invoiceId);
+    // STAGE 2: Consultar FR360
+    let paymentLinkData;
 
-    logger.info(`[Processor] Payment link obtenido para invoice ${invoiceId}`);
-    logger.info(`[Processor] Producto: ${paymentLinkData.product}`);
-    logger.info(`[Processor] Email: ${paymentLinkData.email}`);
-    completedStages.fr360_query = true;
+    if (isStageCompleted(webhook, 'fr360_query')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'fr360_query');
+      paymentLinkData = stageData.paymentLink;
+      logger.info(`[Processor] ⏭️ SKIP fr360_query - Cargado desde checkpoint: ${paymentLinkData.product}`);
+      completedStages.fr360_query = true;
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso2 = Date.now();
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'fr360_query',
+        status: 'processing',
+        details: `Consultando invoice ${invoiceId} en FR360 API`
+      });
 
-    // LOG PASO 2: Consulta FR360 exitosa
-    await WebhookLog.create({
-      webhook_id: webhookId,
-      stage: 'fr360_query',
-      status: 'success',
-      details: `Datos obtenidos de FR360 - Producto: ${paymentLinkData.product}, Email: ${paymentLinkData.email}, Cliente: ${paymentLinkData.givenName} ${paymentLinkData.familyName}, Cédula: ${paymentLinkData.identityDocument}, Comercial: ${paymentLinkData.salesRep || 'N/A'}`,
-      request_payload: { invoiceId },
-      response_data: paymentLinkData
-    });
+      // Obtener datos del payment link desde FR360
+      paymentLinkData = await fr360Service.getPaymentLink(invoiceId);
 
-    // CHECKPOINT 2: Guardar datos de FR360
-    await saveCheckpoint(webhook, 'fr360_query', {
-      paymentLink: paymentLinkData
-    });
+      logger.info(`[Processor] Payment link obtenido para invoice ${invoiceId}`);
+      logger.info(`[Processor] Producto: ${paymentLinkData.product}`);
+      logger.info(`[Processor] Email: ${paymentLinkData.email}`);
+      completedStages.fr360_query = true;
 
-    // NOTIFICACIÓN PASO 2: Consulta FR360
-    const paso2Duration = Date.now() - stepTimestamps.paso2;
-    await notificationService.notifyStep(2, 'CONSULTA FR360', {
-      'Invoice ID': invoiceId,
-      'Producto': paymentLinkData.product,
-      'Email': paymentLinkData.email,
-      'Nombres': paymentLinkData.givenName,
-      'Apellidos': paymentLinkData.familyName,
-      'Cédula': paymentLinkData.identityDocument,
-      'Teléfono': paymentLinkData.phone,
-      'Comercial': paymentLinkData.salesRep,
-      'Fecha de acceso': paymentLinkData.accessDate,
-      'Resultado': '✅ Datos obtenidos exitosamente'
-    }, paso2Duration);
+      // LOG PASO 2: Consulta FR360 exitosa
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'fr360_query',
+        status: 'success',
+        details: `Datos obtenidos de FR360 - Producto: ${paymentLinkData.product}, Email: ${paymentLinkData.email}, Cliente: ${paymentLinkData.givenName} ${paymentLinkData.familyName}, Cédula: ${paymentLinkData.identityDocument}, Comercial: ${paymentLinkData.salesRep || 'N/A'}`,
+        request_payload: { invoiceId },
+        response_data: paymentLinkData
+      });
+
+      // CHECKPOINT 2: Guardar datos de FR360
+      await saveCheckpoint(webhook, 'fr360_query', {
+        paymentLink: paymentLinkData
+      });
+
+      // NOTIFICACIÓN PASO 2: Consulta FR360
+      const paso2Duration = Date.now() - stepTimestamps.paso2;
+      await notificationService.notifyStep(2, 'CONSULTA FR360', {
+        'Invoice ID': invoiceId,
+        'Producto': paymentLinkData.product,
+        'Email': paymentLinkData.email,
+        'Nombres': paymentLinkData.givenName,
+        'Apellidos': paymentLinkData.familyName,
+        'Cédula': paymentLinkData.identityDocument,
+        'Teléfono': paymentLinkData.phone,
+        'Comercial': paymentLinkData.salesRep,
+        'Fecha de acceso': paymentLinkData.accessDate,
+        'Resultado': '✅ Datos obtenidos exitosamente'
+      }, paso2Duration);
+    }
 
     // PASO 2.1: Notificar al cliente vía Callbell
-    stepTimestamps.paso2_1 = Date.now();
-    logger.info(`[Processor] PASO 2.1: Enviando notificación Callbell al cliente`);
-
     let callbellResult = null;
-    try {
-      callbellResult = await callbellService.sendPaymentTemplate({
-        phone: paymentLinkData.phone,
-        givenName: paymentLinkData.givenName,
-        amount: `$${parseFloat(webhook.amount).toLocaleString('es-CO')}`,
-        email: paymentLinkData.email
-      });
 
-      if (callbellResult.success) {
-        logger.info(`[Processor] ✅ Notificación Callbell enviada: ${callbellResult.messageId}`);
-        completedStages.callbell_notification = true;
-      } else {
-        logger.warn(`[Processor] ⚠️ Notificación Callbell falló (no bloquea proceso): ${callbellResult.error}`);
-      }
+    if (isStageCompleted(webhook, 'callbell_notification')) {
+      // Cargar desde checkpoint
+      const stageData = getStageData(webhook, 'callbell_notification');
+      callbellResult = {
+        success: true,
+        messageId: stageData.messageId,
+        phone: stageData.phone,
+        sentAt: stageData.sentAt
+      };
+      logger.info(`[Processor] ⏭️ SKIP callbell_notification - Ya enviado: ${callbellResult.messageId}`);
+      completedStages.callbell_notification = true;
+    } else {
+      // Ejecutar stage
+      stepTimestamps.paso2_1 = Date.now();
+      logger.info(`[Processor] PASO 2.1: Enviando notificación Callbell al cliente`);
 
-      // LOG PASO 2.1: Callbell
-      await WebhookLog.create({
-        webhook_id: webhookId,
-        stage: 'callbell_notification',
-        status: callbellResult.success ? 'success' : 'warning',
-        details: callbellResult.success
-          ? `Notificación enviada a ${callbellResult.phone} - Message ID: ${callbellResult.messageId}`
-          : `Notificación falló: ${callbellResult.error}`,
-        request_payload: {
+      try {
+        callbellResult = await callbellService.sendPaymentTemplate({
           phone: paymentLinkData.phone,
           givenName: paymentLinkData.givenName,
-          amount: webhook.amount,
+          amount: `$${parseFloat(webhook.amount).toLocaleString('es-CO')}`,
           email: paymentLinkData.email
-        },
-        response_data: callbellResult
-      });
+        });
 
-      // CHECKPOINT 2.1: Guardar resultado de Callbell
-      if (callbellResult.success) {
-        await saveCheckpoint(webhook, 'callbell_notification', {
-          messageId: callbellResult.messageId,
-          phone: callbellResult.phone,
-          sentAt: callbellResult.sentAt
+        if (callbellResult.success) {
+          logger.info(`[Processor] ✅ Notificación Callbell enviada: ${callbellResult.messageId}`);
+          completedStages.callbell_notification = true;
+        } else {
+          logger.warn(`[Processor] ⚠️ Notificación Callbell falló (no bloquea proceso): ${callbellResult.error}`);
+        }
+
+        // LOG PASO 2.1: Callbell
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'callbell_notification',
+          status: callbellResult.success ? 'success' : 'warning',
+          details: callbellResult.success
+            ? `Notificación enviada a ${callbellResult.phone} - Message ID: ${callbellResult.messageId}`
+            : `Notificación falló: ${callbellResult.error}`,
+          request_payload: {
+            phone: paymentLinkData.phone,
+            givenName: paymentLinkData.givenName,
+            amount: webhook.amount,
+            email: paymentLinkData.email
+          },
+          response_data: callbellResult
+        });
+
+        // CHECKPOINT 2.1: Guardar resultado de Callbell
+        if (callbellResult.success) {
+          await saveCheckpoint(webhook, 'callbell_notification', {
+            messageId: callbellResult.messageId,
+            phone: callbellResult.phone,
+            sentAt: callbellResult.sentAt
+          });
+        }
+
+        // NOTIFICACIÓN PASO 2.1: Callbell
+        const paso2_1Duration = Date.now() - stepTimestamps.paso2_1;
+        await notificationService.notifyStep(2.1, 'NOTIFICACIÓN CALLBELL', {
+          'Teléfono': callbellResult.phone,
+          'Estado': callbellResult.success ? '✅ Enviado' : '⚠️ Falló',
+          'Message ID': callbellResult.messageId || 'N/A',
+          'Error': callbellResult.error || 'N/A'
+        }, paso2_1Duration);
+
+      } catch (error) {
+        logger.error(`[Processor] Error en PASO 2.1 (Callbell):`, error);
+        // No lanzar error, continuar con el proceso
+        await WebhookLog.create({
+          webhook_id: webhookId,
+          stage: 'callbell_notification',
+          status: 'error',
+          details: `Error al enviar notificación Callbell`,
+          error_message: error.message
         });
       }
-
-      // NOTIFICACIÓN PASO 2.1: Callbell
-      const paso2_1Duration = Date.now() - stepTimestamps.paso2_1;
-      await notificationService.notifyStep(2.1, 'NOTIFICACIÓN CALLBELL', {
-        'Teléfono': callbellResult.phone,
-        'Estado': callbellResult.success ? '✅ Enviado' : '⚠️ Falló',
-        'Message ID': callbellResult.messageId || 'N/A',
-        'Error': callbellResult.error || 'N/A'
-      }, paso2_1Duration);
-
-    } catch (error) {
-      logger.error(`[Processor] Error en PASO 2.1 (Callbell):`, error);
-      // No lanzar error, continuar con el proceso
-      await WebhookLog.create({
-        webhook_id: webhookId,
-        stage: 'callbell_notification',
-        status: 'error',
-        details: `Error al enviar notificación Callbell`,
-        error_message: error.message
-      });
     }
 
     // STAGE 3: Verificar si el producto requiere creación de membresías
-    stepTimestamps.paso3 = Date.now();
     const debeCrearMemberships = requiresMemberships(paymentLinkData.product);
     let membershipResult = null;
 
     if (debeCrearMemberships) {
+      if (isStageCompleted(webhook, 'membership_creation')) {
+        // Cargar desde checkpoint
+        const stageData = getStageData(webhook, 'membership_creation');
+        membershipResult = {
+          membershipsCreadas: stageData.memberships || [],
+          activationUrl: stageData.activationUrl,
+          etiquetas: stageData.etiquetas || []
+        };
+        logger.info(`[Processor] ⏭️ SKIP membership_creation - Ya creadas: ${membershipResult.membershipsCreadas.length} membresía(s)`);
+        completedStages.memberships = true;
+      } else {
+        // Ejecutar stage
+        stepTimestamps.paso3 = Date.now();
+
       // Registrar creación de membresías
       await WebhookLog.create({
         webhook_id: webhookId,
@@ -302,7 +381,7 @@ async function processWebhook(webhookId) {
         activationUrl: membershipResult.activationUrl,
         etiquetas: membershipResult.etiquetas
       });
-
+      }
     } else {
       logger.info(`[Processor] Producto no requiere membresías: ${paymentLinkData.product}`);
 
