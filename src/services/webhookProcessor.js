@@ -26,6 +26,9 @@ const logger = require('../config/logger');
 
 /**
  * Guarda el checkpoint de un stage completado
+ * IMPORTANTE: Los checkpoints se guardan INMEDIATAMENTE en la BD usando reload()
+ * para asegurar que persistan incluso si un stage posterior falla.
+ *
  * @param {Object} webhook - Instancia del webhook
  * @param {string} stageName - Nombre del stage completado
  * @param {Object} data - Datos a guardar en el contexto
@@ -45,14 +48,18 @@ async function saveCheckpoint(webhook, stageName, data = {}) {
     completedStages.push(stageName);
   }
 
-  // Actualizar webhook
-  await webhook.update({
-    processing_context: context,
-    completed_stages: completedStages,
-    last_completed_stage: stageName
-  });
+  // Actualizar webhook con save() directo (no update()) para forzar persistencia
+  webhook.processing_context = context;
+  webhook.completed_stages = completedStages;
+  webhook.last_completed_stage = stageName;
 
-  logger.info(`[Checkpoint] Stage '${stageName}' guardado en contexto`);
+  // Guardar INMEDIATAMENTE en la BD
+  await webhook.save();
+
+  // Recargar desde BD para confirmar que se guardó
+  await webhook.reload();
+
+  logger.info(`[Checkpoint] ✅ Stage '${stageName}' guardado y confirmado en BD`);
 }
 
 /**
