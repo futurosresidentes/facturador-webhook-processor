@@ -2,9 +2,9 @@
  * Configuración de promociones
  */
 const CONFIGURACION_PROMOCIONES = {
-  // Promoción actual: 14-21 Octubre 2025
+  // Promoción anterior: 14-21 Octubre 2025 (INACTIVA)
   promocion_oct_2025: {
-    activa: true,
+    activa: false,  // ⚠️ Desactivada - ya venció
     inicio: new Date('2025-10-14T00:00:00-05:00'),
     fin: new Date('2025-10-21T23:59:59-05:00'),
     descripcion: 'Promoción Octubre 2025: CES y UPB incluidos',
@@ -48,6 +48,48 @@ const CONFIGURACION_PROMOCIONES = {
           usarFechaInicio: false,
           fechaFinFija: new Date('2026-04-08T23:59:59-05:00')
         }
+      ]
+    }
+  },
+
+  // ✨ Black Days Élite Octubre 2025: 28 Oct - 21 Nov
+  black_days_oct_2025: {
+    activa: true,
+    inicio: new Date('2025-10-28T00:00:00-05:00'),
+    fin: new Date('2025-11-21T23:59:59-05:00'),
+    descripcion: 'Black Days Élite Octubre 2025',
+    memberships: {
+      'Élite - 6 meses': [
+        {
+          nombre: 'Élite 6 meses',
+          membershipPlanId: 4,
+          usarFechaInicio: true,
+          membershipDurationDays: 250
+        }
+        // TODO: Descomentar cuando se tenga el membershipPlanId de Univalle
+        // {
+        //   nombre: 'Simulación Univalle',
+        //   membershipPlanId: XX,  // ⚠️ PENDIENTE: Solicitar ID del plan
+        //   usarFechaInicio: false,
+        //   fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'),
+        //   fechaFinFija: new Date('2026-03-31T23:59:59-05:00')
+        // }
+      ],
+      'Élite - 9 meses': [
+        {
+          nombre: 'Élite 9 meses',
+          membershipPlanId: 3,
+          usarFechaInicio: true,
+          membershipDurationDays: 372
+        }
+        // TODO: Descomentar cuando se tenga el membershipPlanId de Univalle
+        // {
+        //   nombre: 'Simulación Univalle',
+        //   membershipPlanId: XX,  // ⚠️ PENDIENTE: Solicitar ID del plan
+        //   usarFechaInicio: false,
+        //   fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'),
+        //   fechaFinFija: new Date('2026-03-31T23:59:59-05:00')
+        // }
       ]
     }
   }
