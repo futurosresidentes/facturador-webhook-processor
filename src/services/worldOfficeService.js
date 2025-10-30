@@ -18,7 +18,7 @@ const { getProductBase } = require('../utils/productFilter');
 // Configuración de axios para World Office
 const woClient = axios.create({
   baseURL: config.worldOffice?.apiUrl,
-  timeout: 30000,
+  timeout: 120000, // 120 segundos (2 minutos) - suficiente para creación, contabilización y emisión DIAN
   headers: {
     'Content-Type': 'application/json',
     'Authorization': config.worldOffice?.apiToken
