@@ -1360,6 +1360,10 @@ async function processWebhook(webhookId) {
 
     // Actualizar webhook con estado de error y información de retriabilidad
     if (webhook) {
+      // CRÍTICO: Recargar webhook desde BD para obtener checkpoints guardados
+      // Sin esto, webhook.update() sobrescribe con versión vieja y pierde checkpoints
+      await webhook.reload();
+
       const context = webhook.processing_context || {};
       const currentStage = webhook.current_stage || 'unknown';
 
