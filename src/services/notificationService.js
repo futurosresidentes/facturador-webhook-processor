@@ -274,26 +274,21 @@ async function notifyFrapp(title, details) {
 
 /**
  * Notifica paso a paso del procesamiento (para debugging detallado)
- * @param {number} step - Número del paso (1-10)
+ * NOTA: Solo notifica el PASO 0 (inicio). Los demás pasos se omiten para reducir saturación.
+ * @param {number} step - Número del paso (0-10)
  * @param {string} title - Título del paso
  * @param {Object} data - Datos a mostrar
  * @param {number} durationMs - Duración del paso en milisegundos (opcional)
  */
 async function notifyStep(step, title, data = {}, durationMs = null) {
-  const emojis = {
-    1: '📝',
-    2: '🔍',
-    3: '👥',
-    4: '🎯',
-    5: '📞',
-    6: '🏢',
-    7: '📄',
-    8: '💼',
-    9: '📧',
-    10: '💾'
-  };
+  // Solo notificar PASO 0 (inicio del procesamiento)
+  // Los pasos intermedios se omiten, solo se notifica el resultado final (notifySuccess o notifyError)
+  if (step !== 0) {
+    logger.info(`[Notification] Omitiendo notificación del PASO ${step}: ${title} (solo se notifica PASO 0 y resultado final)`);
+    return;
+  }
 
-  const emoji = emojis[step] || '▶️';
+  const emoji = '▶️';
 
   const messageParts = [
     `${emoji} *PASO ${step}: ${title}*`,
