@@ -37,13 +37,17 @@ const testConnection = async () => {
 // Sync database (create tables if not exist)
 const syncDatabase = async (force = false) => {
   try {
-    // En producción, usar alter para agregar columnas sin borrar datos
-    const syncOptions = config.nodeEnv === 'production'
-      ? { alter: true }
-      : { force };
+    // DESHABILITADO: Las tablas ya existen en Supabase con la estructura correcta
+    // No ejecutar sync en producción para evitar conflictos con el schema existente
+    if (config.nodeEnv === 'production') {
+      logger.info('Database sync skipped in production (tables already exist in Supabase)');
+      return;
+    }
 
+    // En desarrollo, permitir sync
+    const syncOptions = { force };
     await sequelize.sync(syncOptions);
-    logger.info(`Database synchronized ${force ? '(forced)' : syncOptions.alter ? '(alter mode)' : ''}`);
+    logger.info(`Database synchronized ${force ? '(forced)' : ''}`);
   } catch (error) {
     logger.error('Error synchronizing database:', error);
     throw error;
