@@ -72,7 +72,7 @@ const Webhook = sequelize.define('Webhook', {
     comment: 'Stores cached data from each completed stage to avoid re-executing API calls'
   },
   completed_stages: {
-    type: DataTypes.JSONB,
+    type: DataTypes.ARRAY(DataTypes.TEXT),
     field: 'completed_stages',
     defaultValue: [],
     comment: 'Array of stage names that completed successfully (checkpoint list)'
