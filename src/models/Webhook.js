@@ -10,7 +10,6 @@ const Webhook = sequelize.define('Webhook', {
   ref_payco: {
     type: DataTypes.STRING(255),
     allowNull: false,
-    unique: true,
     field: 'ref_payco'
   },
   transaction_id: {
