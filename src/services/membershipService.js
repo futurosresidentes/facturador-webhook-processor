@@ -4,7 +4,7 @@ const logger = require('../config/logger');
 const { getProductBase } = require('../utils/productFilter');
 const { obtenerConfiguracionMemberships } = require('../utils/promotions');
 const { addDays, formatForFR360, isValidDate } = require('../utils/dateHelpers');
-const { Membership } = require('../models');
+// const { Membership } = require('../models'); // DESHABILITADO: tabla no existe en Supabase, se manejan vía API
 const FeatureFlag = require('../models/FeatureFlag');
 const notificationService = require('./notificationService');
 
@@ -345,10 +345,11 @@ async function createMemberships(params) {
       }
     }
 
-    // 10. Guardar en BD
+    // 10. Guardar en BD - DESHABILITADO: tabla memberships no existe en Supabase
+    // Las membresías se manejan completamente vía API de Frapp, no necesitamos guardarlas localmente
     if (webhookId) {
-      await Membership.create(membershipRecord);
-      logger.info(`[Membership] Membership guardada en BD`);
+      // await Membership.create(membershipRecord);
+      logger.info(`[Membership] Membership creada exitosamente en Frapp (no se guarda en BD local)`);
     }
 
     // Pequeña pausa entre memberships
