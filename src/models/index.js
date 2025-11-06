@@ -1,7 +1,7 @@
 const Webhook = require('./Webhook');
 const WebhookLog = require('./WebhookLog');
 const Membership = require('./Membership');
-// const Contact = require('./Contact'); // DESHABILITADO: tabla no existe en Supabase
+const Contact = require('./Contact');
 const FeatureFlag = require('./FeatureFlag');
 
 // Define relationships
@@ -12,14 +12,14 @@ WebhookLog.belongsTo(Webhook, { foreignKey: 'webhook_id', as: 'webhook' });
 Webhook.hasMany(Membership, { foreignKey: 'webhook_id', as: 'memberships' });
 Membership.belongsTo(Webhook, { foreignKey: 'webhook_id', as: 'webhook' });
 
-// DESHABILITADO: Contact no existe en Supabase, datos vienen de Frapp CRM
-// Contact.hasMany(Membership, { foreignKey: 'contact_id', as: 'memberships' });
-// Membership.belongsTo(Contact, { foreignKey: 'contact_id', as: 'contact' });
+// Relationship con Contact (cache local de contactos de Frapp CRM)
+Contact.hasMany(Membership, { foreignKey: 'contact_id', as: 'memberships' });
+Membership.belongsTo(Contact, { foreignKey: 'contact_id', as: 'contact' });
 
 module.exports = {
   Webhook,
   WebhookLog,
   Membership,
-  // Contact, // DESHABILITADO
+  Contact,
   FeatureFlag
 };
