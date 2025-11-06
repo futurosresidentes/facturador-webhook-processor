@@ -45,7 +45,7 @@ const WebhookLog = sequelize.define('WebhookLog', {
     field: 'created_at'
   }
 }, {
-  tableName: 'webhook_processing_logs',
+  tableName: 'webhook_logs',
   timestamps: false,
   indexes: [
     { fields: ['webhook_id'] },
