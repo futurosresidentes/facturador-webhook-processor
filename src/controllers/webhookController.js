@@ -22,21 +22,32 @@ async function receiveWebhook(req, res) {
     };
 
     // 1. Guardar webhook en BD
-    const webhook = await Webhook.create({
-      ref_payco: webhookData.x_ref_payco,
-      transaction_id: webhookData.x_transaction_id,
-      invoice_id: webhookData.x_id_invoice,
-      customer_email: webhookData.x_customer_email,
-      customer_name: `${webhookData.x_customer_name || ''} ${webhookData.x_customer_lastname || ''}`.trim(),
-      customer_city: normalizeValue(webhookData.x_customer_city),
-      customer_address: normalizeValue(webhookData.x_customer_address),
-      product: normalizeProductName(webhookData.x_description),  // Normalizar producto
-      amount: webhookData.x_amount,
-      currency: webhookData.x_currency_code,
-      response: webhookData.x_response,
-      status: 'pending',
-      raw_data: webhookData
-    });
+    let webhook;
+    try {
+      webhook = await Webhook.create({
+        ref_payco: webhookData.x_ref_payco,
+        transaction_id: webhookData.x_transaction_id,
+        invoice_id: webhookData.x_id_invoice,
+        customer_email: webhookData.x_customer_email,
+        customer_name: `${webhookData.x_customer_name || ''} ${webhookData.x_customer_lastname || ''}`.trim(),
+        customer_city: normalizeValue(webhookData.x_customer_city),
+        customer_address: normalizeValue(webhookData.x_customer_address),
+        product: normalizeProductName(webhookData.x_description),  // Normalizar producto
+        amount: webhookData.x_amount,
+        currency: webhookData.x_currency_code,
+        response: webhookData.x_response,
+        status: 'pending',
+        raw_data: webhookData
+      });
+    } catch (createError) {
+      logger.error(`[Controller] Error creando webhook en BD:`, {
+        error: createError.message,
+        name: createError.name,
+        errors: createError.errors?.map(e => ({ message: e.message, type: e.type, path: e.path, value: e.value })),
+        sql: createError.sql
+      });
+      throw createError;
+    }
 
     logger.info(`[Controller] Webhook guardado con ID: ${webhook.id}`);
 
