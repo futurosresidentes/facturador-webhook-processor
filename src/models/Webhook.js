@@ -18,6 +18,7 @@ const Webhook = sequelize.define('Webhook', {
   },
   invoice_id: {
     type: DataTypes.STRING(255),
+    allowNull: false,
     field: 'invoice_id'
   },
   customer_email: {
@@ -37,10 +38,12 @@ const Webhook = sequelize.define('Webhook', {
     field: 'customer_address'
   },
   product: {
-    type: DataTypes.STRING(255)
+    type: DataTypes.STRING(255),
+    allowNull: false
   },
   amount: {
-    type: DataTypes.DECIMAL(10, 2)
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false
   },
   currency: {
     type: DataTypes.STRING(10)
