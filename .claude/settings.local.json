@@ -16,7 +16,9 @@
       "Bash(git checkout:*)",
       "Bash(find:*)",
       "Bash(test:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(git push:*)",
+      "Bash(comm -23:*)"
     ],
     "deny": [],
     "ask": []

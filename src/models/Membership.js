@@ -17,11 +17,9 @@ const Membership = sequelize.define('Membership', {
   },
   contact_id: {
     type: DataTypes.INTEGER,
-    references: {
-      model: 'contacts',
-      key: 'id'
-    },
-    field: 'contact_id'
+    allowNull: true,  // No hay tabla contacts en Supabase, guardamos el ID de Frapp para referencia
+    field: 'contact_id',
+    comment: 'ID del contacto en Frapp CRM (no es FK porque contacts no existe localmente)'
   },
   membership_plan_id: {
     type: DataTypes.INTEGER,

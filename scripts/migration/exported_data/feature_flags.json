@@ -1,0 +1,27 @@
+[
+  {
+    "key": "WORLDOFFICE_INVOICE_ENABLED",
+    "value": true,
+    "description": "Activar creación de facturas en World Office"
+  },
+  {
+    "key": "WORLDOFFICE_ACCOUNTING_ENABLED",
+    "value": true,
+    "description": "Activar contabilización de facturas en World Office"
+  },
+  {
+    "key": "WORLDOFFICE_DIAN_ENABLED",
+    "value": false,
+    "description": "Activar emisión electrónica ante la DIAN en World Office"
+  },
+  {
+    "key": "FRAPP_MEMBERSHIP_ENABLED",
+    "value": true,
+    "description": "Activar creación de membresías en Frapp"
+  },
+  {
+    "key": "STRAPI_FACTURACION_ENABLED",
+    "value": true,
+    "description": "Activar registro de facturaciones en Strapi"
+  }
+]
