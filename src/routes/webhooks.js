@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const webhookController = require('../controllers/webhookController');
+const webhookReprocessController = require('../controllers/webhookReprocessController');
 const validateWebhook = require('../middleware/validateWebhook');
 const authenticate = require('../middleware/authenticate');
 
@@ -27,6 +28,18 @@ router.post('/', validateWebhook, webhookController.receiveWebhook);
  * Requiere: Authorization: Bearer <token>
  */
 router.post('/:id/retry', authenticate, webhookController.retryWebhook);
+
+/**
+ * POST /api/webhooks/:id/reprocess-memberships
+ * Reprocesa SOLO las memberships de un webhook
+ * - Elimina memberships existentes (simuladas o erróneas)
+ * - Consulta FR360 para obtener datos actualizados
+ * - Crea las memberships reales en Frapp
+ * - Vincula con contact_id si existe
+ *
+ * Requiere: Authorization: Bearer <token>
+ */
+router.post('/:id/reprocess-memberships', authenticate, webhookReprocessController.reprocessMemberships);
 
 /**
  * GET /api/webhooks/recent
