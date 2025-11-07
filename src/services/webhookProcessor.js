@@ -455,6 +455,18 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] Contacto ya existía en BD local: ${localContact.id}`);
     }
 
+    // Actualizar memberships con el contact_id local (si se crearon memberships)
+    if (membershipResult && webhookId) {
+      const { Membership } = require('../models');
+      const updateCount = await Membership.update(
+        { contact_id: localContact.id },
+        { where: { webhook_id: webhookId, contact_id: null } }
+      );
+      if (updateCount[0] > 0) {
+        logger.info(`[Processor] ${updateCount[0]} membership(s) vinculada(s) al contacto local ID ${localContact.id}`);
+      }
+    }
+
     // Si hay activationUrl, actualizar en CRM
     if (membershipResult?.activationUrl) {
       await crmService.updateContact(contact.id, {
