@@ -141,7 +141,7 @@ function formatPhoneForCallbell(phone) {
  * PASO 2.1: Enviar plantilla de confirmación de pago vía Callbell
  * @param {Object} data - Datos para la plantilla
  * @param {string} data.phone - Teléfono del cliente
- * @param {string} data.givenName - Primer nombre del cliente
+ * @param {string} data.product - Nombre del producto
  * @param {string} data.amount - Monto pagado
  * @param {string} data.email - Email del cliente
  * @returns {Promise<Object>} Resultado del envío
@@ -150,10 +150,8 @@ async function sendPaymentTemplate(data) {
   try {
     const phoneFormatted = formatPhoneForCallbell(data.phone);
 
-    // Extraer primer nombre (primera palabra)
-    const firstName = data.givenName ? data.givenName.split(' ')[0] : 'Cliente';
-
     logger.info(`[Callbell] Enviando plantilla de pago a: ${phoneFormatted}`);
+    logger.info(`[Callbell] Producto: ${data.product}, Monto: ${data.amount}`);
 
     const payload = {
       to: phoneFormatted,
@@ -163,7 +161,7 @@ async function sendPaymentTemplate(data) {
         text: 'Pago'
       },
       template_values: [
-        firstName,         // variable1: Primer nombre
+        data.product,      // variable1: Nombre del producto
         data.amount,       // variable2: Valor del pago
         data.email         // variable3: Email
       ],

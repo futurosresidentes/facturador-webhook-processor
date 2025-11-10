@@ -256,7 +256,7 @@ async function processWebhook(webhookId) {
       try {
         callbellResult = await callbellService.sendPaymentTemplate({
           phone: paymentLinkData.phone,
-          givenName: paymentLinkData.givenName,
+          product: paymentLinkData.product,
           amount: `$${parseFloat(webhook.amount).toLocaleString('es-CO')}`,
           email: paymentLinkData.email
         });
