@@ -102,14 +102,25 @@ async function createMemberships(params) {
     let membershipStartDate, membershipExpiryDate, membershipDurationDays;
 
     if (configMembership.usarFechaInicio) {
-      // Usar fechainicio y duración en días
+      // Usar fecha de inicio variable (fecha de compra)
       membershipStartDate = formatForFR360(fechaInicioBase);
-      membershipDurationDays = configMembership.membershipDurationDays;
 
-      const fechaFin = addDays(fechaInicioBase, membershipDurationDays);
-      membershipExpiryDate = formatForFR360(fechaFin);
-
-      logger.info(`[Membership] Start: ${membershipStartDate} | Duration: ${membershipDurationDays} días | Expiry: ${membershipExpiryDate}`);
+      // Caso 1: Tiene membershipDurationDays (fecha fin calculada)
+      if (configMembership.membershipDurationDays) {
+        membershipDurationDays = configMembership.membershipDurationDays;
+        const fechaFin = addDays(fechaInicioBase, membershipDurationDays);
+        membershipExpiryDate = formatForFR360(fechaFin);
+        logger.info(`[Membership] Start: ${membershipStartDate} | Duration: ${membershipDurationDays} días | Expiry: ${membershipExpiryDate}`);
+      }
+      // Caso 2: Tiene fechaFinFija (fecha fin fija)
+      else if (configMembership.fechaFinFija) {
+        membershipExpiryDate = formatForFR360(configMembership.fechaFinFija);
+        membershipDurationDays = Math.ceil((configMembership.fechaFinFija - fechaInicioBase) / (1000 * 60 * 60 * 24));
+        logger.info(`[Membership] Start: ${membershipStartDate} | Fecha fin fija: ${membershipExpiryDate} | Duration calculada: ${membershipDurationDays} días`);
+      }
+      else {
+        throw new Error(`Membership ${configMembership.nombre} con usarFechaInicio:true debe tener membershipDurationDays o fechaFinFija`);
+      }
     } else {
       // Usar fechas fijas (inicio y fin)
       // Si hay fechaInicioFija, validar que no sea anterior a hoy
