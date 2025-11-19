@@ -69,9 +69,9 @@ const CONFIGURACION_PROMOCIONES = {
         {
           nombre: 'Simulación Univalle',
           membershipPlanId: 12,
-          usarFechaInicio: false,
-          fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'),
-          fechaFinFija: new Date('2026-03-31T23:59:59-05:00')
+          usarFechaInicio: true,
+          // fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'), // Comentado: ahora inicia desde fecha de compra
+          fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
         }
       ],
       'Élite - 9 meses': [
@@ -84,9 +84,9 @@ const CONFIGURACION_PROMOCIONES = {
         {
           nombre: 'Simulación Univalle',
           membershipPlanId: 12,
-          usarFechaInicio: false,
-          fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'),
-          fechaFinFija: new Date('2026-03-31T23:59:59-05:00')
+          usarFechaInicio: true,
+          // fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'), // Comentado: ahora inicia desde fecha de compra
+          fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
         }
       ]
     }
