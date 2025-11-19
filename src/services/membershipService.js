@@ -160,13 +160,18 @@ async function createMemberships(params) {
       membershipStartDate
     };
 
-    // Si usa fechainicio + duración: pasar membershipDurationDays
-    if (configMembership.usarFechaInicio) {
+    // Determinar qué parámetro enviar a la API de Frapp
+    if (configMembership.usarFechaInicio && configMembership.membershipDurationDays) {
+      // Caso 1: Fecha inicio variable + duración en días
       payload.membershipDurationDays = membershipDurationDays;
     }
-    // Si tiene fecha fija de fin: pasar membershipEndDate en vez de duration
-    else {
+    else if (configMembership.fechaFinFija) {
+      // Caso 2: Fecha fin fija (con o sin fecha inicio fija)
       payload.membershipEndDate = membershipExpiryDate;
+    }
+    else {
+      // Caso 3: Solo por seguridad, aunque no debería llegar aquí
+      payload.membershipDurationDays = membershipDurationDays;
     }
 
     // Si no es el primero, indicar que cree membership en usuario existente
