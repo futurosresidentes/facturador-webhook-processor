@@ -21,6 +21,7 @@ const strapiCarteraService = require('./strapiCarteraService');
 const { requiresMemberships, getProductBase } = require('../utils/productFilter');
 const { toColombiaISO } = require('../utils/dateUtils');
 const { isRetriableError, getErrorDetails, getErrorContext } = require('../utils/errorClassifier');
+const { isSpecialCase, notifySpecialCase } = require('../utils/specialCases');
 const config = require('../config/env');
 const logger = require('../config/logger');
 
@@ -365,10 +366,46 @@ async function processWebhook(webhookId) {
     }
 
     // STAGE 3: Verificar si el producto requiere creación de membresías
+    const specialCase = isSpecialCase(paymentLinkData.product);
     const debeCrearMemberships = requiresMemberships(paymentLinkData.product);
     let membershipResult = null;
 
-    if (debeCrearMemberships) {
+    // CASO ESPECIAL: Productos que requieren notificación manual
+    if (specialCase) {
+      logger.info(`[Processor] Caso especial detectado: ${specialCase.type} - ${specialCase.producto}`);
+      stepTimestamps.paso3 = Date.now();
+
+      // Enviar notificación a Google Chat
+      await notifySpecialCase({
+        type: specialCase.type,
+        producto: paymentLinkData.product,
+        customerName: `${paymentLinkData.givenName} ${paymentLinkData.familyName}`,
+        email: paymentLinkData.email,
+        phone: paymentLinkData.phone,
+        identityDocument: paymentLinkData.identityDocument,
+        amount: `$${parseFloat(webhook.amount).toLocaleString('es-CO')}`,
+        refPayco: webhook.ref_payco
+      });
+
+      // Registrar como exitoso (no requiere membresías automáticas)
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'membership_check',
+        status: 'success',
+        details: `Caso especial: ${specialCase.type === 'cuota_extraordinaria' ? 'Cuota extraordinaria' : 'Élite 3 meses'} - Notificación enviada a Google Chat para gestión manual`
+      });
+
+      // NOTIFICACIÓN PASO 3: Caso especial
+      const paso3Duration = Date.now() - stepTimestamps.paso3;
+      await notificationService.notifyStep(3, 'CASO ESPECIAL DETECTADO', {
+        'Producto': paymentLinkData.product,
+        'Tipo': specialCase.type === 'cuota_extraordinaria' ? '⚠️ Cuota extraordinaria' : 'ℹ️ Élite 3 meses',
+        'Requiere membresías automáticas': '❌ No',
+        'Acción': '✅ Notificación enviada a Google Chat',
+        'Resultado': '✅ Gestión manual requerida'
+      }, paso3Duration);
+
+    } else if (debeCrearMemberships) {
       if (isStageCompleted(webhook, 'membership_creation')) {
         // Cargar desde checkpoint
         const stageData = getStageData(webhook, 'membership_creation');

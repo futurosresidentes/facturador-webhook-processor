@@ -18,7 +18,8 @@
       "Bash(test:*)",
       "Bash(git rm:*)",
       "Bash(git push:*)",
-      "Bash(comm -23:*)"
+      "Bash(comm -23:*)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []
