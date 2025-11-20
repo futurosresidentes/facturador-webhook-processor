@@ -25,6 +25,33 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 
 /**
+ * Marcar el inicio de un stage (actualiza current_stage en BD)
+ * Esto permite saber en qué stage falló si ocurre un error
+ * @param {Object} webhook - Instancia del webhook
+ * @param {string} stageName - Nombre del stage que está iniciando
+ */
+async function markStageStart(webhook, stageName) {
+  const webhookId = webhook.id;
+
+  // Actualizar current_stage en BD
+  const { Webhook } = require('../models');
+  await Webhook.update(
+    {
+      current_stage: stageName,
+      updated_at: new Date()
+    },
+    {
+      where: { id: webhookId }
+    }
+  );
+
+  // Recargar para reflejar el cambio
+  await webhook.reload();
+
+  logger.info(`[Stage] 🔄 Iniciando stage: ${stageName}`);
+}
+
+/**
  * Guarda el checkpoint de un stage completado
  * IMPORTANTE: Los checkpoints se guardan INMEDIATAMENTE en la BD usando reload()
  * para asegurar que persistan incluso si un stage posterior falla.
@@ -34,32 +61,44 @@ const logger = require('../config/logger');
  * @param {Object} data - Datos a guardar en el contexto
  */
 async function saveCheckpoint(webhook, stageName, data = {}) {
+  const webhookId = webhook.id;
+
+  // PASO 1: Recargar webhook para obtener valores más recientes
+  await webhook.reload();
+
   const context = webhook.processing_context || {};
   const completedStages = webhook.completed_stages || [];
 
-  // Guardar datos del stage en el contexto
+  // PASO 2: Guardar datos del stage en el contexto
   context[stageName] = {
     completed_at: new Date().toISOString(),
     data
   };
 
-  // Agregar stage a la lista de completados (si no existe ya)
+  // PASO 3: Agregar stage a la lista de completados (si no existe ya)
   if (!completedStages.includes(stageName)) {
     completedStages.push(stageName);
   }
 
-  // Actualizar webhook con save() directo (no update()) para forzar persistencia
-  webhook.processing_context = context;
-  webhook.completed_stages = completedStages;
-  webhook.last_completed_stage = stageName;
+  // PASO 4: Actualizar directamente en BD usando Webhook.update()
+  // Esto garantiza que los checkpoints se persistan INMEDIATAMENTE, incluso si hay error después
+  const { Webhook } = require('../models');
+  const [updateCount] = await Webhook.update(
+    {
+      processing_context: context,
+      completed_stages: completedStages,
+      last_completed_stage: stageName,
+      updated_at: new Date()
+    },
+    {
+      where: { id: webhookId }
+    }
+  );
 
-  // Guardar INMEDIATAMENTE en la BD
-  await webhook.save();
-
-  // Recargar desde BD para confirmar que se guardó
+  // PASO 5: Recargar webhook para reflejar los cambios en la instancia actual
   await webhook.reload();
 
-  logger.info(`[Checkpoint] ✅ Stage '${stageName}' guardado y confirmado en BD`);
+  logger.info(`[Checkpoint] ✅ Stage '${stageName}' guardado en BD (${updateCount} row(s), total completados: ${completedStages.length})`);
 }
 
 /**
@@ -147,6 +186,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️ SKIP invoice_extraction - Cargado desde checkpoint: ${invoiceId}`);
       completedStages.invoice_extraction = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'invoice_extraction');
+
       // Ejecutar stage
       stepTimestamps.paso1 = Date.now();
       invoiceId = webhook.invoice_id.split('-')[0];
@@ -186,6 +228,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️ SKIP fr360_query - Cargado desde checkpoint: ${paymentLinkData.product}`);
       completedStages.fr360_query = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'fr360_query');
+
       // Ejecutar stage
       stepTimestamps.paso2 = Date.now();
       await WebhookLog.create({
@@ -249,6 +294,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️ SKIP callbell_notification - Ya enviado: ${callbellResult.messageId}`);
       completedStages.callbell_notification = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'callbell_notification');
+
       // Ejecutar stage
       stepTimestamps.paso2_1 = Date.now();
       logger.info(`[Processor] PASO 2.1: Enviando notificación Callbell al cliente`);
@@ -332,6 +380,9 @@ async function processWebhook(webhookId) {
         logger.info(`[Processor] ⏭️ SKIP membership_creation - Ya creadas: ${membershipResult.membershipsCreadas.length} membresía(s)`);
         completedStages.memberships = true;
       } else {
+        // Marcar inicio del stage en BD
+        await markStageStart(webhook, 'membership_creation');
+
         // Ejecutar stage
         stepTimestamps.paso3 = Date.now();
 
@@ -421,6 +472,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️  SKIP crm_management - Contacto CRM ID ${contact.id} ya gestionado (cargado desde checkpoint)`);
       completedStages.crm = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'crm_management');
+
       // Ejecutar stage
       stepTimestamps.paso4 = Date.now();
       await WebhookLog.create({
@@ -585,6 +639,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️  SKIP worldoffice_customer - Cliente WO ID ${woCustomerResult.customerId} ya gestionado (cargado desde checkpoint)`);
       completedStages.worldoffice_customer = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'worldoffice_customer');
+
       // Ejecutar stage
       stepTimestamps.paso5 = Date.now();
       logger.info(`[Processor] PASO 5: Gestionando cliente en World Office`);
@@ -689,6 +746,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️  SKIP worldoffice_invoice_creation - Factura ${invoiceResult.numeroFactura} ya creada (cargada desde checkpoint)`);
       completedStages.worldoffice_invoice = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'worldoffice_invoice_creation');
+
       stepTimestamps.paso6a = Date.now();
 
       try {
@@ -857,6 +917,9 @@ async function processWebhook(webhookId) {
       logger.info(`[Processor] ⏭️  SKIP worldoffice_invoice_accounting - Factura ${invoiceResult.numeroFactura} ya contabilizada (cargada desde checkpoint)`);
       completedStages.worldoffice_accounting = true;
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'worldoffice_invoice_accounting');
+
       // Ejecutar stage
       stepTimestamps.paso6b = Date.now();
 
@@ -936,6 +999,9 @@ async function processWebhook(webhookId) {
         completedStages.worldoffice_dian = true;
       }
     } else {
+      // Marcar inicio del stage en BD
+      await markStageStart(webhook, 'worldoffice_dian_emission');
+
       // Ejecutar stage
       stepTimestamps.paso6c = Date.now();
 
@@ -1197,6 +1263,9 @@ async function processWebhook(webhookId) {
         logger.info(`[Processor] ⏭️  SKIP strapi_facturacion_creation - Facturación ${strapiFacturacionId} ya registrada (cargada desde checkpoint)`);
         completedStages.strapi_facturacion = true;
       } else {
+        // Marcar inicio del stage en BD
+        await markStageStart(webhook, 'strapi_facturacion_creation');
+
         // Ejecutar stage
         const strapiUrl = `${config.strapi.apiUrl}/api/facturaciones`;
 
@@ -1344,6 +1413,62 @@ async function processWebhook(webhookId) {
 
     logger.info(`[Processor] Webhook ${webhook.ref_payco} procesado exitosamente en ${(processingTimeMs / 1000).toFixed(2)}s`);
 
+    // ===================================================================
+    // PASO 8: REENVIAR WEBHOOK A ZAPIER
+    // ===================================================================
+    // Este es el último paso - reenvía el webhook original a Zapier para que
+    // otras áreas de la empresa puedan aprovecharlo
+    let zapierResult = null;
+
+    try {
+      stepTimestamps.paso8 = Date.now();
+      logger.info(`[Processor] PASO 8: Reenviando webhook a Zapier`);
+
+      const zapierService = require('./zapierService');
+      zapierResult = await zapierService.forwardToZapier(webhook.raw_data);
+
+      if (zapierResult.success) {
+        logger.info(`[Processor] ✅ Webhook reenviado a Zapier exitosamente`);
+      } else {
+        logger.warn(`[Processor] ⚠️ No se pudo reenviar a Zapier: ${zapierResult.error}`);
+      }
+
+      // LOG PASO 8: Zapier
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'zapier_forward',
+        status: zapierResult.success ? 'success' : 'warning',
+        details: zapierResult.success
+          ? `Webhook reenviado a Zapier exitosamente`
+          : `Error reenviando a Zapier: ${zapierResult.error}`,
+        response_data: zapierResult
+      });
+
+      const paso8Duration = Date.now() - stepTimestamps.paso8;
+      await notificationService.notifyStep(10, 'REENVÍO A ZAPIER', {
+        'Status': zapierResult.success ? '✅ Enviado' : '⚠️ Error',
+        'Error': zapierResult.error || 'N/A',
+        'Resultado': zapierResult.success
+          ? `Webhook reenviado correctamente a Zapier`
+          : `No se pudo reenviar (no crítico)`
+      }, paso8Duration);
+
+    } catch (error) {
+      logger.error(`[Processor] Error en PASO 8 (Zapier): ${error.message}`);
+
+      // LOG ERROR PASO 8
+      await WebhookLog.create({
+        webhook_id: webhookId,
+        stage: 'zapier_forward',
+        status: 'warning',
+        details: `Error reenviando a Zapier (no crítico)`,
+        error_message: error.message
+      });
+
+      // No lanzar error - el reenvío a Zapier no es crítico para el flujo principal
+      logger.warn(`[Processor] Continuando sin reenvío a Zapier`);
+    }
+
     // Retornar resultado del procesamiento
     return {
       success: true,
@@ -1385,13 +1510,24 @@ async function processWebhook(webhookId) {
         error: errorDetails
       };
 
-      await webhook.update({
-        status: 'error',
-        failed_stage: currentStage,
-        processing_context: context,
-        is_retriable: errorDetails.is_retriable,
-        updated_at: new Date()
-      });
+      // IMPORTANTE: Usar Webhook.update() en lugar de webhook.update()
+      // para actualizar SOLO los campos de error sin tocar completed_stages ni last_completed_stage
+      const { Webhook } = require('../models');
+      await Webhook.update(
+        {
+          status: 'error',
+          failed_stage: currentStage,
+          processing_context: context,
+          is_retriable: errorDetails.is_retriable,
+          updated_at: new Date()
+        },
+        {
+          where: { id: webhookId }
+        }
+      );
+
+      // Recargar para reflejar cambios
+      await webhook.reload();
     }
 
     // Enviar notificación de error
