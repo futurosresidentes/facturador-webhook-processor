@@ -372,8 +372,15 @@ async function processWebhook(webhookId) {
 
     // CASO ESPECIAL: Productos que requieren notificación manual
     if (specialCase) {
-      logger.info(`[Processor] Caso especial detectado: ${specialCase.type} - ${specialCase.producto}`);
-      stepTimestamps.paso3 = Date.now();
+      // Verificar si ya se procesó este caso especial
+      if (isStageCompleted(webhook, 'membership_check')) {
+        // Cargar desde checkpoint
+        const stageData = getStageData(webhook, 'membership_check');
+        logger.info(`[Processor] ⏭️ SKIP membership_check - Caso especial ya procesado: ${stageData.type}`);
+      } else {
+        // Ejecutar stage
+        logger.info(`[Processor] Caso especial detectado: ${specialCase.type} - ${specialCase.producto}`);
+        stepTimestamps.paso3 = Date.now();
 
       // Enviar notificación a Google Chat
       await notifySpecialCase({
@@ -404,6 +411,15 @@ async function processWebhook(webhookId) {
         'Acción': '✅ Notificación enviada a Google Chat',
         'Resultado': '✅ Gestión manual requerida'
       }, paso3Duration);
+
+        // CHECKPOINT: Guardar que se procesó el caso especial
+        await saveCheckpoint(webhook, 'membership_check', {
+          specialCase: true,
+          type: specialCase.type,
+          producto: paymentLinkData.product,
+          notificationSent: true
+        });
+      } // Fin del else de membership_check
 
     } else if (debeCrearMemberships) {
       if (isStageCompleted(webhook, 'membership_creation')) {
