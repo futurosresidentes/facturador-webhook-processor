@@ -7,8 +7,8 @@ const axios = require('axios');
 const config = require('../config/env');
 const logger = require('../config/logger');
 
-// URL del webhook de Zapier
-const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/7310127/udhxcza/';
+// URL del webhook de Zapier desde variables de entorno
+const ZAPIER_WEBHOOK_URL = process.env.ZAPIER_WEBHOOK_URL;
 
 /**
  * PASO 8: Reenviar webhook a Zapier

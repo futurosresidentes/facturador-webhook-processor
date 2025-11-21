@@ -6,8 +6,8 @@
 const axios = require('axios');
 const logger = require('../config/logger');
 
-// URL del webhook de Google Chat para notificaciones especiales
-const GOOGLE_CHAT_WEBHOOK = 'https://chat.googleapis.com/v1/spaces/AAQAdd9Y5To/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=t7hCuCfAlZdNCoUe7LC9Xby_oy0OaNL_rXfm2Q2m3HM';
+// URL del webhook de Google Chat desde variables de entorno
+const GOOGLE_CHAT_WEBHOOK = process.env.GOOGLE_CHAT_WEBHOOK_URL;
 
 /**
  * Verifica si un producto es un caso especial
