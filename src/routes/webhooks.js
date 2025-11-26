@@ -6,10 +6,28 @@ const validateWebhook = require('../middleware/validateWebhook');
 const authenticate = require('../middleware/authenticate');
 
 /**
+ * Middleware para convertir query params a body (para GET de ePayco)
+ */
+const queryToBody = (req, res, next) => {
+  if (req.method === 'GET' && Object.keys(req.query).length > 0) {
+    // Si viene por GET con query params, convertir a body
+    req.body = { ...req.query };
+  }
+  next();
+};
+
+/**
  * POST /api/webhooks
- * Recibe webhooks de ePayco (sin autenticación - validado por ePayco)
+ * Recibe webhooks de ePayco via POST (sin autenticación)
  */
 router.post('/', validateWebhook, webhookController.receiveWebhook);
+
+/**
+ * GET /api/webhooks
+ * Recibe webhooks de ePayco via GET (sin autenticación)
+ * ePayco a veces envía GET en lugar de POST, así que soportamos ambos
+ */
+router.get('/', queryToBody, validateWebhook, webhookController.receiveWebhook);
 
 /**
  * POST /api/webhooks/:id/retry
@@ -57,7 +75,7 @@ router.get('/recent', authenticate, (req, res, next) => {
 }, webhookController.listWebhooks);
 
 /**
- * GET /api/webhooks
+ * GET /api/webhooks/list
  * Lista todos los webhooks con logs (o filtra por parámetros)
  * Query params:
  *   ?id=88 - Busca webhook específico con logs detallados
@@ -68,7 +86,7 @@ router.get('/recent', authenticate, (req, res, next) => {
  *   ?offset=0 - Paginación
  * Requiere: Authorization: Bearer <token>
  */
-router.get('/', authenticate, webhookController.listWebhooks);
+router.get('/list', authenticate, webhookController.listWebhooks);
 
 /**
  * PATCH /api/webhooks/:id
