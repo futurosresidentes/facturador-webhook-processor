@@ -52,9 +52,9 @@ const CONFIGURACION_PROMOCIONES = {
     }
   },
 
-  // ✨ Black Days Élite Octubre 2025: 28 Oct - 21 Nov
+  // Black Days Élite Octubre 2025: 28 Oct - 21 Nov (INACTIVA)
   black_days_oct_2025: {
-    activa: true,
+    activa: false,  // ⚠️ Desactivada - ya venció
     inicio: new Date('2025-10-28T00:00:00-05:00'),
     fin: new Date('2025-11-21T23:59:59-05:00'),
     descripcion: 'Black Days Élite Octubre 2025',
@@ -70,7 +70,6 @@ const CONFIGURACION_PROMOCIONES = {
           nombre: 'Simulación Univalle',
           membershipPlanId: 12,
           usarFechaInicio: true,
-          // fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'), // Comentado: ahora inicia desde fecha de compra
           fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
         }
       ],
@@ -85,7 +84,56 @@ const CONFIGURACION_PROMOCIONES = {
           nombre: 'Simulación Univalle',
           membershipPlanId: 12,
           usarFechaInicio: true,
-          // fechaInicioFija: new Date('2026-01-01T00:00:00-05:00'), // Comentado: ahora inicia desde fecha de compra
+          fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
+        }
+      ]
+    }
+  },
+
+  // ✨ Black Friday + Día Médico Noviembre 2025: 28-30 Nov
+  black_friday_dia_medico_nov_2025: {
+    activa: true,
+    inicio: new Date('2025-11-28T00:00:00-05:00'),
+    fin: new Date('2025-11-30T23:59:59-05:00'),
+    descripcion: 'Black Friday + Día Médico Noviembre 2025: Intensivo UdeA + Simulación Univalle incluidos',
+    memberships: {
+      'Élite - 6 meses': [
+        {
+          nombre: 'Élite 6 meses',
+          membershipPlanId: 4,
+          usarFechaInicio: true,
+          membershipDurationDays: 250
+        },
+        {
+          nombre: 'Intensivo UdeA 2026',
+          membershipPlanId: 8,
+          usarFechaInicio: true,
+          fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
+        },
+        {
+          nombre: 'Simulación Univalle',
+          membershipPlanId: 12,
+          usarFechaInicio: true,
+          fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
+        }
+      ],
+      'Élite - 9 meses': [
+        {
+          nombre: 'Élite 9 meses',
+          membershipPlanId: 3,
+          usarFechaInicio: true,
+          membershipDurationDays: 370
+        },
+        {
+          nombre: 'Intensivo UdeA 2026',
+          membershipPlanId: 8,
+          usarFechaInicio: true,
+          fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
+        },
+        {
+          nombre: 'Simulación Univalle',
+          membershipPlanId: 12,
+          usarFechaInicio: true,
           fechaFinFija: new Date('2026-05-31T23:59:59-05:00')
         }
       ]
