@@ -90,11 +90,11 @@ const CONFIGURACION_PROMOCIONES = {
     }
   },
 
-  // ✨ Black Friday + Día Médico Noviembre 2025: 28-30 Nov
+  // ✨ Black Friday + Día Médico Noviembre 2025: 28 Nov - 9 Dic
   black_friday_dia_medico_nov_2025: {
     activa: true,
     inicio: new Date('2025-11-28T00:00:00-05:00'),
-    fin: new Date('2025-11-30T23:59:59-05:00'),
+    fin: new Date('2025-12-09T08:00:00-05:00'),
     descripcion: 'Black Friday + Día Médico Noviembre 2025: Intensivo UdeA + Simulación Univalle incluidos',
     memberships: {
       'Élite - 6 meses': [
