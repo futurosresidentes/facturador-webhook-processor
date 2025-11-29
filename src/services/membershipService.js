@@ -298,6 +298,22 @@ async function createMemberships(params) {
 
               logger.info(`[Membership] ✅ Membresía creada exitosamente (usuario existente)`);
 
+            } else if (errorMsg.includes('ya tiene una membresía activa')) {
+              // El usuario ya tiene esta membresía activa - esto es OK en promociones
+              logger.info(`[Membership] ℹ️ Usuario ya tiene membresía activa para ${configMembership.nombre} - Continuando sin error`);
+
+              membershipsCreadas.push({
+                nombre: configMembership.nombre,
+                planId: configMembership.membershipPlanId,
+                inicio: membershipStartDate,
+                fin: membershipExpiryDate,
+                duracion: configMembership.usarFechaInicio ? membershipDurationDays : null,
+                usaDuracion: configMembership.usarFechaInicio,
+                simulado: false,
+                yaExistia: true,
+                mensaje: 'Usuario ya tenía esta membresía activa'
+              });
+
             } else {
               // Otro tipo de error
               throw new Error(`API retornó success: false - ${errorMsg}`);
