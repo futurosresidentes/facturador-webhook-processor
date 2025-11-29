@@ -488,7 +488,7 @@ async function processWebhook(webhookId) {
 
       // CHECKPOINT 3: Guardar resultado de membresías
       await saveCheckpoint(webhook, 'membership_creation', {
-        memberships: membershipResult.membreshipsCreadas || [],
+        memberships: membershipResult.membershipsCreadas || [],
         activationUrl: membershipResult.activationUrl,
         etiquetas: membershipResult.etiquetas
       });
